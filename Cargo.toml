@@ -1,0 +1,19 @@
+[package]
+name = "xsl-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+std = []
+allocator-api2 = ["dep:allocator-api2"]
+default = ["allocator-api2"]
+
+[dependencies]
+allocator-api2 = { version = "0.2.16", optional = true }
+
+[dev-dependencies]
+libc-print = "0.1.22"
+allocator-api2 = "0.2.16"
+rand = "0.8.5"
