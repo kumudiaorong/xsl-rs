@@ -8,6 +8,10 @@ repository = "https://github.com/kumudiaorong/xsl-rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "xsl"
+path = "src/bin/xsl.rs"
+
 [features]
 std = []
 allocator-api2 = ["dep:allocator-api2"]

@@ -39,15 +39,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'xsl-rs'",
+            "name": "Debug executable 'xsl'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=xsl-rs",
+                    "--bin=xsl",
                     "--package=xsl-rs"
                 ],
                 "filter": {
-                    "name": "xsl-rs",
+                    "name": "xsl",
                     "kind": "bin"
                 }
             },
