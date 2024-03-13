@@ -11,6 +11,7 @@ fn large_data() {
     for k in data.iter() {
         tree.insert(k.clone(), 0);
     }
+    tree.check();
     for k in &data {
         tree.remove(k);
     }
