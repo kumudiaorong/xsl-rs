@@ -21,3 +21,12 @@ where
         f();
     }
 }
+
+pub fn timing<F>(f: F) -> std::time::Duration
+where
+    F: FnOnce(),
+{
+    let start = std::time::Instant::now();
+    f();
+    start.elapsed()
+}
