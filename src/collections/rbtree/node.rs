@@ -148,7 +148,7 @@ impl<K, V> Node<K, V> {
             } else if left_nephew_ptr.flag.is_red() {
                 left_nephew_ptr.single_rotate();
                 left_nephew_ptr.single_rotate();
-                brother_ptr.flag.set_color(parent.flag.color());
+                left_nephew_ptr.flag.set_color(parent.flag.color());
                 parent.flag.set_black();
             } else {
                 brother_ptr.flag.set_red();

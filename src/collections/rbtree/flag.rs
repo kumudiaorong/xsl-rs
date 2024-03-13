@@ -100,7 +100,7 @@ impl Flag {
         self
     }
     pub fn set_color(&mut self, color: Color) -> &mut Self {
-        self.flag = (self.flag & 0b11110000) | Into::<u8>::into(color);
+        self.flag = (self.flag & 0b11110011) | Into::<u8>::into(color);
         self
     }
     pub fn set_red(&mut self) -> &mut Self {

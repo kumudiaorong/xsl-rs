@@ -778,17 +778,20 @@ where
     pub(super) fn raw_remove(&mut self, node: Ptr<Node<K, V>>) -> (K, V) {
         let kv = unsafe { core::mem::transmute_copy(&node.key_value) };
         fn replace<K, V>(mut node: Ptr<Node<K, V>>) -> Ptr<Node<K, V>> {
-            let mut repl_node = node.get().max();
-            if repl_node == node {
-                repl_node = node.get().min();
-                if repl_node == node {
+            if node.next[1].is_null() {
+                if node.next[0].is_null() {
                     return node;
                 }
+                unsafe {
+                    core::ptr::copy_nonoverlapping(&node.next[0].key_value, &mut node.key_value, 1);
+                }
+                return node.next[0];
             }
+            let repl_node = node.next[1].get().min();
             unsafe {
                 core::ptr::copy_nonoverlapping(&repl_node.key_value, &mut node.key_value, 1);
             }
-            repl_node
+            return replace(repl_node);
         }
         let repl_node = replace(node);
         let mut parent_ptr = repl_node.next[2];
@@ -824,10 +827,13 @@ where
                 if parent_ptr.flag.is_red() {
                     brother_ptr.single_rotate();
                 } else {
-                    nephew = parent_ptr.next[rela.toggle() as usize];
+                    nephew = brother_ptr.next[rela.toggle() as usize];
                     if nephew.is_null() {
                         brother_ptr.flag.set_red();
-                        parent_ptr.rasie(rela);
+                        if parent_ptr.flag.rela() != Rela::PARENT {
+                            let rela = parent_ptr.flag.rela();
+                            parent_ptr.next[2].rasie(rela);
+                        }
                     } else {
                         brother_ptr.single_rotate();
                         nephew.flag.set_black();
@@ -882,6 +888,7 @@ where
 
 impl<K, V, A> RBTreeMap<K, V, A>
 where
+    K: Ord,
     A: Allocator + Clone,
 {
     pub(super) fn check(&self) {
@@ -916,6 +923,8 @@ where
                     "red right child",
                 );
             }
+            assert!(node.key_value.0 > node.next[0].key_value.0, "wrong order");
+            assert!(node.key_value.0 < node.next[1].key_value.0, "wrong order");
             stack.push((node.next[1], height));
             stack.push((node.next[0], height));
         }
