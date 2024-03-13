@@ -185,11 +185,11 @@ impl<K, V> Node<K, V> {
     }
     pub(super) unsafe fn next_unchecked(&self) -> Ptr<Self> {
         if self.next[1].is_null() {
-            if self.flag.rela() == Rela::LEFT {
+            if self.flag.is_left() {
                 self.next[2]
             } else {
                 let mut node = self.next[2].get();
-                while node.flag.rela() == Rela::RIGHT {
+                while node.flag.is_right() {
                     node = node.next[2].get();
                 }
                 node.next[2]
@@ -200,11 +200,11 @@ impl<K, V> Node<K, V> {
     }
     pub(crate) unsafe fn next_back_unchecked(&self) -> Ptr<Self> {
         if self.next[0].is_null() {
-            if self.flag.rela() == Rela::RIGHT {
+            if self.flag.is_right() {
                 self.next[2]
             } else {
                 let mut node = self.next[2].get();
-                while node.flag.rela() == Rela::LEFT {
+                while node.flag.is_left() {
                     node = node.next[2].get();
                 }
                 node.next[2]

@@ -79,25 +79,7 @@ impl Display for Color {
         }
     }
 }
-impl Color {
-    pub fn toggle(&self) -> Self {
-        match self {
-            Color::RED => Color::BLACK,
-            Color::BLACK => Color::RED,
-            Color::ROOT => Color::ROOT,
-        }
-    }
-}
 impl Flag {
-    pub fn new() -> Self {
-        Flag { flag: 0 }
-    }
-    pub fn set(&mut self, flag: u8) {
-        self.flag = flag;
-    }
-    pub fn clear(&mut self) {
-        self.flag = 0;
-    }
     pub fn is_red(&self) -> bool {
         self.flag & 0b1100 == Color::RED.into()
     }
@@ -131,14 +113,6 @@ impl Flag {
     }
     pub fn set_root(&mut self) -> &mut Self {
         self.flag = (self.flag & 0b11110011) | Into::<u8>::into(Color::ROOT);
-        self
-    }
-    pub fn set_left(&mut self) -> &mut Self {
-        self.flag = (self.flag & 0b11111100) | Into::<u8>::into(Rela::LEFT);
-        self
-    }
-    pub fn set_right(&mut self) -> &mut Self {
-        self.flag = (self.flag & 0b11111100) | Into::<u8>::into(Rela::RIGHT);
         self
     }
     pub fn rela(&self) -> Rela {
