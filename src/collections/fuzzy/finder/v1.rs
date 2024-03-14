@@ -24,15 +24,15 @@ extern crate std;
 use crate::collections::RBTreeMap;
 use std::collections::HashSet;
 #[derive(Debug)]
-pub struct FuzzyFinder<T> {
+pub struct Finder<T> {
     root: Node<T>,
 }
-impl<T> Default for FuzzyFinder<T> {
+impl<T> Default for Finder<T> {
     fn default() -> Self {
         Self::new()
     }
 }
-impl<T> Extend<(String, T)> for FuzzyFinder<T> {
+impl<T> Extend<(String, T)> for Finder<T> {
     fn extend<I: IntoIterator<Item = (String, T)>>(&mut self, iter: I) {
         for (word, value) in iter {
             self.insert(word, value);
@@ -44,7 +44,7 @@ struct Node<T> {
     children: RBTreeMap<char, Node<T>>,
     values: Vec<T>,
 }
-impl<T> FuzzyFinder<T> {
+impl<T> Finder<T> {
     pub fn new() -> Self {
         Self {
             root: Node {

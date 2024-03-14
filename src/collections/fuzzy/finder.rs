@@ -1,2 +1,2 @@
 mod v1;
-pub use v1::FuzzyFinder;
+pub use v1::Finder;

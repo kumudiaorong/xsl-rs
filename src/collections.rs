@@ -6,4 +6,4 @@ pub mod rbtree_map {
 }
 
 pub mod fuzzy;
-pub use fuzzy::FuzzyFinder;
+pub use fuzzy::Finder as FuzzyFinder;
