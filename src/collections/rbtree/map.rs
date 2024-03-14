@@ -905,7 +905,9 @@ where
         kv: (K, V),
     ) -> Ptr<Node<K, V>> {
         let mut node = Node::new_in(&self.alloc);
-        node.key_value = kv;
+        unsafe {
+            core::ptr::write(&mut node.key_value, kv);
+        }
         parent.next[rela as usize] = node;
         node.set_parent(parent, rela);
         self.length += 1;
