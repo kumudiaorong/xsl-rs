@@ -18,8 +18,8 @@ mod param {
     }
 }
 extern crate alloc;
-use crate::alloc::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 extern crate std;
 use crate::collections::RBTreeMap;
 use std::collections::HashSet;
@@ -53,6 +53,7 @@ impl<T> FuzzyFinder<T> {
             },
         }
     }
+    /// Insert a word and its value into the FuzzyFinder.
     pub fn insert(&mut self, mut word: String, value: T) {
         let mut node = &mut self.root;
         ignore_case!(word);
@@ -64,7 +65,17 @@ impl<T> FuzzyFinder<T> {
         }
         node.values.push(value);
     }
-    pub fn search(&self, mut word: String) -> Option<&Vec<T>> {
+    /// Search a word in the FuzzyFinder.
+    /// Return the value if the word is found, otherwise return None.
+    /// # Example
+    /// ```
+    /// use xsl::collections::FuzzyFinder;
+    /// let mut finder = FuzzyFinder::new();
+    /// finder.insert("hello".to_string(), 1);
+    /// assert_eq!(finder.search("hello".to_string()), Some(vec![&1]));
+    /// assert_eq!(finder.search("world".to_string()), None);
+    /// ```
+    pub fn search(&self, mut word: String) -> Option<Vec<&T>> {
         ignore_case!(word);
         let mut node = &self.root;
         for c in word.chars() {
@@ -74,11 +85,22 @@ impl<T> FuzzyFinder<T> {
                 return None;
             }
         }
-        (!node.values.is_empty()).then_some(&node.values)
+        (!node.values.is_empty()).then(|| node.values.iter().collect())
     }
-    pub fn search_prefix(&self, mut word: String) -> Vec<&T> {
+    /// Search a word prefix in the FuzzyFinder.
+    /// Return the values if the word prefix is found, otherwise return None.
+    /// # Example
+    /// ```
+    /// use xsl::collections::FuzzyFinder;
+    /// let mut finder = FuzzyFinder::new();
+    /// finder.insert("hello".to_string(), 1);
+    /// finder.insert("ello".to_string(), 2);
+    /// assert_eq!(finder.search_prefix("he".to_string()), Some(vec![&1]));
+    /// assert_eq!(finder.search_prefix("e".to_string()), Some(vec![&2, &1]));
+    /// assert_eq!(finder.search_prefix("w".to_string()), None);
+    /// ```
+    pub fn search_prefix(&self, mut word: String) -> Option<Vec<&T>> {
         ignore_case!(word);
-        let mut result: Vec<&T> = Vec::new();
         let mut valid_nodes = Vec::new();
         let mut dedup = HashSet::new();
         let mut stack = Vec::new();
@@ -113,7 +135,15 @@ impl<T> FuzzyFinder<T> {
                 valid_nodes.push(node);
             }
         }
-        over.iter().rev().for_each(|n| result.extend(&n.values));
-        result
+        if over.is_empty() {
+            return None;
+        }
+        Some(
+            over.iter()
+                .rev()
+                .map(|n| n.values.iter())
+                .flatten()
+                .collect(),
+        )
     }
 }
