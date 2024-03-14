@@ -1,22 +1,3 @@
-#[cfg(feature = "fuzzy_finder_v1_param")]
-#[macro_use]
-mod param {
-    extern crate std;
-    include!(std::concat!(
-        std::env!("OUT_DIR"),
-        "/fuzzy_finder_v1_param.rs"
-    ));
-}
-#[cfg(not(feature = "fuzzy_finder_v1_param"))]
-#[macro_use]
-mod param {
-    pub const MISS_COUNT: usize = 3;
-    macro_rules! ignore_case {
-        ($word:expr) => {
-            $word = $word.to_lowercase();
-        };
-    }
-}
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -26,10 +7,12 @@ use std::collections::HashSet;
 #[derive(Debug)]
 pub struct Finder<T> {
     root: Node<T>,
+    miss_count: usize,
+    ignore_case: bool,
 }
 impl<T> Default for Finder<T> {
     fn default() -> Self {
-        Self::new()
+        Self::new(3, true)
     }
 }
 impl<T> Extend<(String, T)> for Finder<T> {
@@ -45,18 +28,22 @@ struct Node<T> {
     values: Vec<T>,
 }
 impl<T> Finder<T> {
-    pub fn new() -> Self {
+    pub fn new(miss_count: usize, ignore_case: bool) -> Self {
         Self {
             root: Node {
                 children: RBTreeMap::new(),
                 values: Vec::new(),
             },
+            miss_count,
+            ignore_case,
         }
     }
     /// Insert a word and its value into the FuzzyFinder.
     pub fn insert(&mut self, mut word: String, value: T) {
         let mut node = &mut self.root;
-        ignore_case!(word);
+        if self.ignore_case {
+            word = word.to_lowercase();
+        }
         for c in word.chars() {
             node = node.children.entry(c).or_insert(Node {
                 children: RBTreeMap::new(),
@@ -70,13 +57,15 @@ impl<T> Finder<T> {
     /// # Example
     /// ```
     /// use xsl::collections::FuzzyFinder;
-    /// let mut finder = FuzzyFinder::new();
+    /// let mut finder = FuzzyFinder::default();
     /// finder.insert("hello".to_string(), 1);
     /// assert_eq!(finder.search("hello".to_string()), Some(vec![&1]));
     /// assert_eq!(finder.search("world".to_string()), None);
     /// ```
     pub fn search(&self, mut word: String) -> Option<Vec<&T>> {
-        ignore_case!(word);
+        if self.ignore_case {
+            word = word.to_lowercase();
+        }
         let mut node = &self.root;
         for c in word.chars() {
             if let Some(n) = node.children.get(&c) {
@@ -92,7 +81,7 @@ impl<T> Finder<T> {
     /// # Example
     /// ```
     /// use xsl::collections::FuzzyFinder;
-    /// let mut finder = FuzzyFinder::new();
+    /// let mut finder = FuzzyFinder::default();
     /// finder.insert("hello".to_string(), 1);
     /// finder.insert("ello".to_string(), 2);
     /// assert_eq!(finder.search_prefix("he".to_string()), Some(vec![&1]));
@@ -100,7 +89,9 @@ impl<T> Finder<T> {
     /// assert_eq!(finder.search_prefix("w".to_string()), None);
     /// ```
     pub fn search_prefix(&self, mut word: String) -> Option<Vec<&T>> {
-        ignore_case!(word);
+        if self.ignore_case {
+            word = word.to_lowercase();
+        }
         let mut valid_nodes = Vec::new();
         let mut dedup = HashSet::new();
         let mut stack = Vec::new();
@@ -113,7 +104,7 @@ impl<T> Finder<T> {
                         if kw == &c {
                             stack.push((node, words.clone(), 0));
                         }
-                        if miss_count < param::MISS_COUNT {
+                        if miss_count < self.miss_count {
                             stack.push((node, back.clone(), miss_count + 1));
                         }
                     }
