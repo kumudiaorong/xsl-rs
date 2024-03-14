@@ -1,7 +1,7 @@
 use super::flag::Rela;
-use super::{map::RBTreeMap, node::Node};
+use super::map::RBTreeMap;
+use super::node::NodeRef;
 use crate::alloc::Allocator;
-use crate::ptr::Ptr;
 use core::borrow::Borrow;
 pub enum Entry<'a, K, V, A>
 where
@@ -156,7 +156,7 @@ pub struct OccupiedEntry<'a, K, V, A>
 where
     A: Allocator + Clone,
 {
-    node: Ptr<Node<K, V>>,
+    node: NodeRef<K, V>,
     tree: &'a mut RBTreeMap<K, V, A>,
 }
 impl<'a, K, V, A> OccupiedEntry<'a, K, V, A>
@@ -164,7 +164,7 @@ where
     A: Allocator + Clone,
 {
     #[inline]
-    pub(super) fn new(node: Ptr<Node<K, V>>, tree: &'a mut RBTreeMap<K, V, A>) -> Self {
+    pub(super) fn new(node: NodeRef<K, V>, tree: &'a mut RBTreeMap<K, V, A>) -> Self {
         OccupiedEntry { node, tree }
     }
     /// Gets a reference to the key in the entry.
@@ -327,7 +327,7 @@ where
     A: Allocator + Clone,
 {
     key: K,
-    node: Ptr<Node<K, V>>,
+    node: NodeRef<K, V>,
     rela: Rela,
     tree: &'a mut RBTreeMap<K, V, A>,
 }
@@ -338,7 +338,7 @@ where
 {
     pub(super) fn new(
         key: K,
-        node: Ptr<Node<K, V>>,
+        node: NodeRef<K, V>,
         rela: Rela,
         tree: &'a mut RBTreeMap<K, V, A>,
     ) -> Self {

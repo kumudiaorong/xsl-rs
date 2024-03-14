@@ -4,11 +4,9 @@ use super::{
     flag::{Color, Rela},
     iter::{Iter, IterMut},
     node::Node,
+    node::NodeRef,
 };
-use crate::{
-    alloc::{Allocator, Global},
-    ptr::Ptr,
-};
+use crate::alloc::{Allocator, Global};
 use core::{
     alloc::Layout,
     borrow::Borrow,
@@ -22,7 +20,7 @@ pub struct RBTreeMap<K, V, A = Global>
 where
     A: Allocator + Clone,
 {
-    root: Ptr<Node<K, V>>,
+    root: NodeRef<K, V>,
     alloc: A,
     length: usize,
 }
@@ -57,11 +55,31 @@ where
     A: Allocator + Clone,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "RBTreeMap {{")?;
-        for (k, v) in self.iter() {
-            write!(f, "{:?}: {:?},", k, v)?;
+        // write!(f, "RBTreeMap {{")?;
+        // for (k, v) in self.iter() {
+        //     write!(f, "{:?}: {:?},", k, v)?;
+        // }
+        // write!(f, "}}")
+        use crate::alloc::Vec;
+
+        let mut cur_stack = Vec::new();
+        let mut next_stack = Vec::new();
+        cur_stack.push(self.root.next[2].clone());
+        while !cur_stack.is_empty() {
+            for node in cur_stack.iter() {
+                if node.is_none() {
+                    write!(f, "[]")?;
+                    continue;
+                }
+                write!(f, "{:?}", &**node)?;
+                next_stack.push(node.next[0].clone());
+                next_stack.push(node.next[1].clone());
+            }
+            cur_stack.clear();
+            writeln!(f)?;
+            core::mem::swap(&mut cur_stack, &mut next_stack);
         }
-        write!(f, "}}")
+        Ok(())
     }
 }
 
@@ -146,21 +164,30 @@ where
     fn clone(&self) -> Self {
         fn new_branch<K, V, A>(
             alloc: &A,
-            src: Ptr<Node<K, V>>,
-            mut dst: Ptr<Node<K, V>>,
+            src: NodeRef<K, V>,
+            mut dst: NodeRef<K, V>,
             rela: Rela,
-        ) -> (Ptr<Node<K, V>>, Ptr<Node<K, V>>)
+        ) -> (NodeRef<K, V>, NodeRef<K, V>)
         where
             K: Clone,
             V: Clone,
             A: Allocator,
         {
-            let src_child = src.next[rela as usize];
-            let mut node = Node::new_in(alloc);
-            node.init_from(src_child.get());
-            dst.next[rela as usize] = node;
-            node.set_parent(dst, rela);
-            (src_child, node)
+            let src_child_ptr = src.next[rela as usize].clone();
+            let src_child = src_child_ptr.clone();
+            let mut new_node_ptr = Node::new_in(alloc);
+            let new_node = unsafe { new_node_ptr.as_mut() };
+            new_node.init_from(&*src_child);
+            dst.next[rela as usize] = NodeRef {
+                node: Some(new_node_ptr),
+            };
+            new_node.set_parent(dst, rela);
+            (
+                src_child_ptr,
+                NodeRef {
+                    node: Some(new_node_ptr),
+                },
+            )
         }
         use crate::alloc::Vec;
         let mut new_tree = Self::new_in(self.alloc.clone());
@@ -170,17 +197,22 @@ where
         let mut stack = Vec::new();
         stack.push(new_branch(
             &new_tree.alloc,
-            self.root,
-            new_tree.root,
+            self.root.clone(),
+            new_tree.root.clone(),
             Rela::PARENT,
         ));
         while let Some((src, dst)) = stack.pop() {
             //First determine whether the child node is empty
             //Simple performance test shows that the following code is faster than the next code
-            if !src.next[0].is_null() {
-                stack.push(new_branch(&new_tree.alloc, src, dst, Rela::LEFT));
+            if !src.next[0].is_none() {
+                stack.push(new_branch(
+                    &new_tree.alloc,
+                    src.clone(),
+                    dst.clone(),
+                    Rela::LEFT,
+                ));
             }
-            if !src.next[1].is_null() {
+            if !src.next[1].is_none() {
                 stack.push(new_branch(&new_tree.alloc, src, dst, Rela::RIGHT));
             }
         }
@@ -199,16 +231,16 @@ where
 
         let mut cur_stack = Vec::new();
         let mut next_stack = Vec::new();
-        cur_stack.push(self.root.next[2]);
+        cur_stack.push(self.root.next[2].clone());
         while !cur_stack.is_empty() {
             for node in cur_stack.iter() {
-                if node.is_null() {
+                if node.is_none() {
                     write!(f, "[]")?;
                     continue;
                 }
-                write!(f, "{}", node.get())?;
-                next_stack.push(node.next[0]);
-                next_stack.push(node.next[1]);
+                write!(f, "{}", &**node)?;
+                next_stack.push(node.next[0].clone());
+                next_stack.push(node.next[1].clone());
             }
             cur_stack.clear();
             writeln!(f)?;
@@ -225,10 +257,8 @@ where
     fn drop(&mut self) {
         self.clear();
         unsafe {
-            self.alloc.deallocate(
-                NonNull::new(self.root.as_ptr().cast()).unwrap(),
-                Layout::new::<Node<K, V>>(),
-            );
+            self.alloc
+                .deallocate(self.root.unwrap().cast(), Layout::new::<Node<K, V>>());
         }
     }
 }
@@ -255,16 +285,17 @@ where
         }
         use crate::alloc::Vec;
         let mut stack = Vec::new();
-        stack.push(self.root.next[2]);
+        stack.push(self.root.next[2].clone());
         while !stack.is_empty() {
             let node = stack.pop().unwrap();
-            if node.is_null() {
+            if node.is_none() {
                 continue;
             }
-            let ptr = node.as_ptr();
-            stack.push(node.next[0]);
-            stack.push(node.next[1]);
+            let node = unsafe { node.unwrap().as_ref() };
+            stack.push(node.next[0].clone());
+            stack.push(node.next[1].clone());
             unsafe {
+                let ptr = node as *const _ as *mut Node<K, V>;
                 core::ptr::drop_in_place(ptr);
                 self.alloc.deallocate(
                     NonNull::new(ptr.cast()).unwrap(),
@@ -350,8 +381,7 @@ where
         if self.is_empty() {
             None
         } else {
-            let kv = &self.raw_first().into_ref().key_value;
-            Some((&kv.0, &kv.1))
+            Some(self.raw_first().into_ref_key_value())
         }
     }
     /// Returns the last key-value pair in the map.
@@ -371,8 +401,7 @@ where
         if self.is_empty() {
             None
         } else {
-            let kv = &self.raw_last().into_ref().key_value;
-            Some((&kv.0, &kv.1))
+            Some(self.raw_last().into_ref_key_value())
         }
     }
 
@@ -467,7 +496,7 @@ where
         if self.is_empty() {
             Iter::new_empty()
         } else {
-            Iter::new(self.root.next[2], self.length)
+            Iter::new(self.root.next[2].clone(), self.length)
         }
     }
     /// Gets a mutable iterator over the entries of the map, sorted by key.
@@ -494,7 +523,7 @@ where
         if self.is_empty() {
             IterMut::new_empty()
         } else {
-            IterMut::new(self.root.next[2], self.length)
+            IterMut::new(self.root.next[2].clone(), self.length)
         }
     }
 }
@@ -669,10 +698,7 @@ where
     {
         let (node, result) = self.raw_search(key);
         match result {
-            Ok(()) => {
-                let kv = &node.into_ref().key_value;
-                Some((&kv.0, &kv.1))
-            }
+            Ok(()) => Some(node.into_ref_key_value()),
             Err(_) => None,
         }
     }
@@ -772,7 +798,9 @@ where
     A: Allocator + Clone,
 {
     pub(super) fn new_in(alloc: A) -> Self {
-        let mut root = Node::new_in(&alloc);
+        let mut root = NodeRef {
+            node: Some(Node::new_in(&alloc)),
+        };
         root.flag.set_root();
         RBTreeMap {
             root,
@@ -784,7 +812,9 @@ where
 impl<K, V> RBTreeMap<K, V> {
     pub fn new() -> Self {
         let alloc = Global::default();
-        let mut root = Node::new_in(&alloc);
+        let mut root = NodeRef {
+            node: Some(Node::new_in(&alloc)),
+        };
         root.flag.set_root();
         RBTreeMap {
             root,
@@ -815,71 +845,76 @@ impl<K, V, A> RBTreeMap<K, V, A>
 where
     A: Allocator + Clone,
 {
-    pub(super) fn raw_remove(&mut self, node: Ptr<Node<K, V>>) -> (K, V) {
+    pub(super) fn raw_remove(&mut self, node: NodeRef<K, V>) -> (K, V) {
         let kv = unsafe { core::mem::transmute_copy(&node.key_value) };
-        fn replace<K, V>(mut node: Ptr<Node<K, V>>) -> Ptr<Node<K, V>> {
-            if node.next[1].is_null() {
-                if node.next[0].is_null() {
+        fn replace<K, V>(mut node: NodeRef<K, V>) -> NodeRef<K, V> {
+            if node.next[1].is_none() {
+                if node.next[0].is_none() {
                     return node;
                 }
                 unsafe {
-                    core::ptr::copy_nonoverlapping(&node.next[0].key_value, &mut node.key_value, 1);
+                    core::ptr::copy_nonoverlapping(
+                        &node.next[0].unwrap().as_ref().key_value,
+                        &mut node.key_value,
+                        1,
+                    );
                 }
-                return node.next[0];
+                return node.into_ref().next[0].clone();
             }
-            let repl_node = node.next[1].get().min();
+            let repl_node = node.next[1].min();
             unsafe {
                 core::ptr::copy_nonoverlapping(&repl_node.key_value, &mut node.key_value, 1);
             }
             return replace(repl_node);
         }
         let repl_node = replace(node);
-        let mut parent_ptr = repl_node.next[2];
+        let mut parent_ptr = repl_node.next[2].clone();
         let rela = repl_node.flag.rela();
         let color = repl_node.flag.color();
-        parent_ptr.next[rela as usize] = Ptr::null();
+        parent_ptr.next[rela as usize] = NodeRef::none();
         self.length -= 1;
         unsafe {
-            self.alloc.deallocate(
-                NonNull::new(repl_node.as_ptr().cast()).unwrap(),
-                Layout::new::<Node<K, V>>(),
-            );
+            self.alloc
+                .deallocate(repl_node.unwrap().cast(), Layout::new::<Node<K, V>>());
         }
         if color == Color::RED || parent_ptr.flag.is_root() {
             return kv;
         }
-        let mut brother_ptr = parent_ptr.next[rela.toggle() as usize];
-        if brother_ptr.flag.is_red() {
-            brother_ptr.single_rotate();
-            let mut nephew_ptr = parent_ptr.next[rela.toggle() as usize];
-            let mut gnephew_ptr = nephew_ptr.next[rela as usize];
-            if gnephew_ptr.is_null() {
-                nephew_ptr.single_rotate();
+        let mut brother_ptr = parent_ptr.next[rela.toggle() as usize].unwrap();
+        if unsafe { brother_ptr.as_ref() }.flag.is_red() {
+            unsafe { brother_ptr.as_mut() }.single_rotate();
+            let mut nephew_ptr = parent_ptr.next[rela.toggle() as usize].unwrap();
+            let gnephew_ptr = unsafe { nephew_ptr.as_ref() }.next[rela as usize].clone();
+            if gnephew_ptr.is_none() {
+                let nephew = unsafe { nephew_ptr.as_mut() };
+                nephew.single_rotate();
                 parent_ptr.flag.set_red();
             } else {
-                gnephew_ptr.single_rotate();
-                gnephew_ptr.single_rotate();
+                let gnephew = unsafe { gnephew_ptr.unwrap().as_mut() };
+                gnephew.single_rotate();
+                gnephew.single_rotate();
             }
-            brother_ptr.flag.set_black();
+            unsafe { brother_ptr.as_mut() }.flag.set_black();
         } else {
-            let mut nephew = brother_ptr.next[rela as usize];
-            if nephew.is_null() {
+            let mut nephew = unsafe { brother_ptr.as_ref() }.next[rela as usize].clone();
+            if nephew.is_none() {
                 if parent_ptr.flag.is_red() {
-                    brother_ptr.single_rotate();
+                    unsafe { brother_ptr.as_mut() }.single_rotate();
                 } else {
-                    nephew = brother_ptr.next[rela.toggle() as usize];
-                    if nephew.is_null() {
-                        brother_ptr.flag.set_red();
+                    nephew = unsafe { brother_ptr.as_ref() }.next[rela.toggle() as usize].clone();
+                    if nephew.is_none() {
+                        unsafe { brother_ptr.as_mut() }.flag.set_red();
                         if parent_ptr.flag.rela() != Rela::PARENT {
                             let rela = parent_ptr.flag.rela();
-                            parent_ptr.next[2].rasie(rela);
+                            unsafe { parent_ptr.next[2].unwrap().as_mut() }.rasie(rela);
                         }
                     } else {
-                        brother_ptr.single_rotate();
-                        nephew.flag.set_black();
+                        unsafe { brother_ptr.as_mut() }.single_rotate();
+                        unsafe { nephew.unwrap().as_mut() }.flag.set_black();
                     }
                 }
             } else {
+                let nephew = unsafe { nephew.unwrap().as_mut() };
                 nephew.single_rotate();
                 nephew.single_rotate();
                 nephew.flag.set_color(parent_ptr.flag.color());
@@ -888,28 +923,30 @@ where
         }
         kv
     }
-    pub(super) fn raw_search<Q>(&self, key: &Q) -> (Ptr<Node<K, V>>, Result<(), Rela>)
+    pub(super) fn raw_search<Q>(&self, key: &Q) -> (NodeRef<K, V>, Result<(), Rela>)
     where
         K: Borrow<Q>,
         Q: ?Sized + Ord,
     {
         if self.len() == 0 {
-            return (self.root, Err(Rela::PARENT));
+            return (self.root.clone(), Err(Rela::PARENT));
         }
         self.root.next[2].search(key)
     }
     pub(super) fn raw_insert(
         &mut self,
-        mut parent: Ptr<Node<K, V>>,
+        mut parent: NodeRef<K, V>,
         rela: Rela,
         kv: (K, V),
-    ) -> Ptr<Node<K, V>> {
-        let mut node = Node::new_in(&self.alloc);
+    ) -> NodeRef<K, V> {
+        let mut node = NodeRef {
+            node: Some(Node::new_in(&self.alloc)),
+        };
         unsafe {
             core::ptr::write(&mut node.key_value, kv);
         }
-        parent.next[rela as usize] = node;
-        node.set_parent(parent, rela);
+        parent.next[rela as usize] = node.clone();
+        node.set_parent(parent.clone(), rela);
         self.length += 1;
         if self.len() == 1 {
             node.flag.set_black();
@@ -920,12 +957,11 @@ where
         }
         node
     }
-    pub(super) fn raw_first(&self) -> Ptr<Node<K, V>> {
-        self.root.next[2].get().min()
+    pub(super) fn raw_first(&self) -> NodeRef<K, V> {
+        unsafe { self.root.next[2].unwrap().as_ref() }.min()
     }
-    pub(super) fn raw_last(&self) -> Ptr<Node<K, V>> {
-        self.root.next[2].get().max()
+    pub(super) fn raw_last(&self) -> NodeRef<K, V> {
+        unsafe { self.root.next[2].unwrap().as_ref() }.max()
     }
 }
-#[cfg(test)]
 mod tests;
