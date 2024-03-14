@@ -26,10 +26,10 @@
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=xsl-rs"
+                    "--package=xsl"
                 ],
                 "filter": {
-                    "name": "xsl-rs",
+                    "name": "xsl",
                     "kind": "lib"
                 }
             },
@@ -44,7 +44,7 @@
                 "args": [
                     "build",
                     "--bin=xsl",
-                    "--package=xsl-rs"
+                    "--package=xsl"
                 ],
                 "filter": {
                     "name": "xsl",
@@ -62,8 +62,8 @@
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=xsl-rs",
-                    "--package=xsl-rs"
+                    "--bin=xsl",
+                    "--package=xsl"
                 ],
                 "filter": {
                     "name": "xsl-rs",
