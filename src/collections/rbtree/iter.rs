@@ -8,11 +8,29 @@ enum LazyPoint<K, V> {
     Ready(Ptr<Node<K, V>>),
     Moving(Ptr<Node<K, V>>),
 }
+impl<K, V> Clone for LazyPoint<K, V> {
+    fn clone(&self) -> Self {
+        match self {
+            LazyPoint::Ready(ptr) => LazyPoint::Ready(*ptr),
+            LazyPoint::Moving(ptr) => LazyPoint::Moving(*ptr),
+        }
+    }
+}
 
 pub struct Iter<'a, K: 'a, V: 'a> {
     range: (LazyPoint<K, V>, LazyPoint<K, V>),
     length: usize,
     _marker: PhantomData<&'a (K, V)>,
+}
+
+impl<'a, K, V> Clone for Iter<'a, K, V> {
+    fn clone(&self) -> Self {
+        Self {
+            range: self.range.clone(),
+            length: self.length,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<'a, K, V> Iter<'a, K, V> {
@@ -128,6 +146,13 @@ impl<'a, K, V> IterMut<'a, K, V> {
             _marker: PhantomData,
         }
     }
+    pub fn iter(&self) -> Iter<'_, K, V> {
+        Iter {
+            range: (self.range.0.clone(), self.range.1.clone()),
+            length: self.length,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<'a, K, V> Iterator for IterMut<'a, K, V> {
@@ -180,5 +205,25 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
         (&'a K, &'a mut V): Ord,
     {
         self.last()
+    }
+}
+impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V> {
+    fn next_back(&mut self) -> Option<(&'a K, &'a mut V)> {
+        if self.length == 0 {
+            return None;
+        }
+        let new_end = match self.range.1 {
+            LazyPoint::Ready(root) => root.get().max(),
+            LazyPoint::Moving(end) => unsafe { end.get().next_back_unchecked() },
+        };
+        self.range.1 = LazyPoint::Moving(new_end);
+        self.length -= 1;
+        let kv = &mut new_end.into_mut().key_value;
+        Some((&kv.0, &mut kv.1))
+    }
+}
+impl<K, V> ExactSizeIterator for IterMut<'_, K, V> {
+    fn len(&self) -> usize {
+        self.length
     }
 }

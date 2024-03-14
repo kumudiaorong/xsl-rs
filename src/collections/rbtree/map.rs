@@ -1,3 +1,4 @@
+mod values;
 use super::{
     entry::{Entry, OccupiedEntry, VacantEntry},
     flag::{Color, Rela},
@@ -16,7 +17,7 @@ use core::{
     ops::Index,
     ptr::NonNull,
 };
-
+use values::{Values, ValuesMut};
 pub struct RBTreeMap<K, V, A = Global>
 where
     A: Allocator + Clone,
@@ -32,7 +33,7 @@ where
     /// Converts a `[(K, V); N]` into a `BTreeMap<(K, V)>`.
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let map1 = RBTreeMap::from([(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)]);
     /// let map2: RBTreeMap<_, _> = [(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)].into();
@@ -241,7 +242,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -278,7 +279,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// assert!(map.is_empty());
@@ -294,7 +295,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// assert_eq!(map.len(), 0);
@@ -311,7 +312,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -337,7 +338,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// assert_eq!(map.first_key_value(), None);
@@ -359,7 +360,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "b");
@@ -381,7 +382,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -409,7 +410,7 @@ where
     /// Draining elements in ascending order, while keeping a usable map each iteration.
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -430,7 +431,7 @@ where
     /// Draining elements in descending order, while keeping a usable map each iteration.
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -448,7 +449,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(3, "c");
@@ -474,7 +475,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::from([
     ///    ("a", 1),
@@ -516,7 +517,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// assert_eq!(map.insert(37, "a"), None);
@@ -543,7 +544,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut count: RBTreeMap<&str, usize> = RBTreeMap::new();
     ///
@@ -576,7 +577,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -602,7 +603,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -632,7 +633,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -654,7 +655,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -685,7 +686,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -712,7 +713,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map = RBTreeMap::new();
     /// map.insert(1, "a");
@@ -725,6 +726,45 @@ where
         Q: ?Sized + Ord,
     {
         self.remove_entry(key).map(|(_, v)| v)
+    }
+    /// Gets an iterator over the values of the map, in order by key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xsl::collections::RBTreeMap;
+    ///
+    /// let mut a = RBTreeMap::new();
+    /// a.insert(1, "hello");
+    /// a.insert(2, "goodbye");
+    ///
+    /// let values: Vec<&str> = a.values().cloned().collect();
+    /// assert_eq!(values, ["hello", "goodbye"]);
+    /// ```
+    pub fn values(&self) -> Values<'_, K, V> {
+        Values::new(self.iter())
+    }
+    /// Gets a mutable iterator over the values of the map, in order by key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xsl::collections::RBTreeMap;
+    ///
+    /// let mut a = RBTreeMap::new();
+    /// a.insert(1, String::from("hello"));
+    /// a.insert(2, String::from("goodbye"));
+    ///
+    /// for value in a.values_mut() {
+    ///     value.push_str("!");
+    /// }
+    ///
+    /// let values: Vec<String> = a.values().cloned().collect();
+    /// assert_eq!(values, [String::from("hello!"),
+    ///                     String::from("goodbye!")]);
+    /// ```
+    pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
+        ValuesMut::new(self.iter_mut())
     }
 }
 impl<K, V, A> RBTreeMap<K, V, A>

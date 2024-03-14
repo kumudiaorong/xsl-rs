@@ -23,7 +23,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map: RBTreeMap<&str, u32> = RBTreeMap::new();
     ///
@@ -47,7 +47,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut tree: RBTreeMap<&str, &str> = RBTreeMap::new();
     /// let value = "hoho";
@@ -74,7 +74,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map: RBTreeMap<&str, usize> = RBTreeMap::new();
     ///
@@ -106,7 +106,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map: RBTreeMap<&str, u32> = RBTreeMap::new();
     /// assert_eq!(map.entry(&"poneyland").key(), &"poneyland");
@@ -124,7 +124,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map: RBTreeMap<&str, u32> = RBTreeMap::new();
     ///
@@ -172,7 +172,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map: RBTreeMap<&str, usize> = RBTreeMap::new();
     /// map.entry("poneyland").or_insert(12);
@@ -188,8 +188,8 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::rbtree_map::Entry;
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::rbtree_map::Entry;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map: RBTreeMap<&str, usize> = RBTreeMap::new();
     /// map.entry("poneyland").or_insert(12);
@@ -360,7 +360,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map: RBTreeMap<&str, usize> = RBTreeMap::new();
     /// assert_eq!(map.entry("poneyland").key(), &"poneyland");
@@ -379,8 +379,8 @@ where
     /// # Examples
     ///
     /// ```
-    /// use xsl_rs::collections::rbtree_map::Entry;
-    /// use xsl_rs::collections::RBTreeMap;
+    /// use xsl::collections::rbtree_map::Entry;
+    /// use xsl::collections::RBTreeMap;
     ///
     /// let mut map: RBTreeMap<&str, u32> = RBTreeMap::new();
     ///
