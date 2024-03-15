@@ -10,12 +10,15 @@ pub enum Rela {
     RIGHT,
     PARENT,
 }
+pub const LEFT: u8 = 0b00;
+pub const RIGHT: u8 = 0b01;
+pub const PARENT: u8 = 0b10;
 impl From<u8> for Rela {
     fn from(flag: u8) -> Self {
         match flag {
-            0b00 => Rela::LEFT,
-            0b01 => Rela::RIGHT,
-            0b10 => Rela::PARENT,
+            LEFT => Rela::LEFT,
+            RIGHT => Rela::RIGHT,
+            PARENT => Rela::PARENT,
             _ => unreachable!(),
         }
     }
@@ -39,28 +42,30 @@ impl Display for Rela {
         }
     }
 }
-impl Rela {
-    pub fn toggle(&self) -> Self {
-        match self {
-            Rela::LEFT => Rela::RIGHT,
-            Rela::RIGHT => Rela::LEFT,
-            Rela::PARENT => Rela::PARENT,
-        }
-    }
-}
-#[repr(u8)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum Color {
     RED,
     BLACK,
     ROOT,
 }
+pub const RED: u8 = 0b0000;
+pub const BLACK: u8 = 0b100;
+pub const ROOT: u8 = 0b1000;
+impl Color {
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            Color::RED => RED,
+            Color::BLACK => BLACK,
+            Color::ROOT => ROOT,
+        }
+    }
+}
 impl From<u8> for Color {
     fn from(flag: u8) -> Self {
         match flag {
-            0b000 => Color::RED,
-            0b100 => Color::BLACK,
-            0b1000 => Color::ROOT,
+            RED => Color::RED,
+            BLACK => Color::BLACK,
+            ROOT => Color::ROOT,
             _ => unreachable!(),
         }
     }
@@ -80,45 +85,66 @@ impl Display for Color {
     }
 }
 impl Flag {
+    #[inline(always)]
     pub fn is_red(&self) -> bool {
-        self.flag & 0b1100 == Color::RED.into()
+        self.flag & 0b1100 == RED
     }
+    #[inline(always)]
     pub fn is_black(&self) -> bool {
-        self.flag & 0b1100 == Color::BLACK.into()
+        self.flag & 0b1100 == BLACK
     }
+    #[inline(always)]
     pub fn is_root(&self) -> bool {
-        self.flag & 0b1100 == Color::ROOT.into()
+        self.flag & 0b1100 == ROOT
     }
+    #[inline(always)]
     pub fn is_left(&self) -> bool {
-        self.flag & 0b11 == Rela::LEFT.into()
+        self.flag & 0b11 == LEFT
     }
+    #[inline(always)]
     pub fn is_right(&self) -> bool {
-        self.flag & 0b11 == Rela::RIGHT.into()
+        self.flag & 0b11 == RIGHT
     }
-    pub fn set_rela(&mut self, rela: Rela) -> &mut Self {
-        self.flag = (self.flag & 0b11111100) | Into::<u8>::into(rela);
+    #[inline(always)]
+    pub fn set_rela(&mut self, rela: u8) -> &mut Self {
+        self.flag = (self.flag & 0b11111100) | rela;
         self
     }
+    #[inline(always)]
     pub fn set_color(&mut self, color: Color) -> &mut Self {
-        self.flag = (self.flag & 0b11110011) | Into::<u8>::into(color);
+        self.flag = (self.flag & 0b11110011) | color.as_u8();
         self
     }
+    #[inline(always)]
     pub fn set_red(&mut self) -> &mut Self {
-        self.flag = (self.flag & 0b11110011) | Into::<u8>::into(Color::RED);
+        self.flag = (self.flag & 0b11110011) | RED;
         self
     }
+    #[inline(always)]
     pub fn set_black(&mut self) -> &mut Self {
-        self.flag = (self.flag & 0b11110011) | Into::<u8>::into(Color::BLACK);
+        self.flag = (self.flag & 0b11110011) | BLACK;
         self
     }
+    #[inline(always)]
     pub fn set_root(&mut self) -> &mut Self {
-        self.flag = (self.flag & 0b11110011) | Into::<u8>::into(Color::ROOT);
+        self.flag = (self.flag & 0b11110011) | ROOT;
         self
     }
-    pub fn rela(&self) -> Rela {
-        Rela::from(self.flag & 0b11)
+    #[inline(always)]
+    pub fn rela(&self) -> usize {
+        (self.flag & 0b11) as usize
     }
+    #[inline(always)]
     pub fn color(&self) -> Color {
         Color::from(self.flag & 0b1100)
+    }
+}
+
+pub fn toggle_rela(rela: usize) -> usize {
+    match rela {
+        0 => 1,
+        1 => 0,
+        2 => 2,
+        _ => unreachable!(),
     }
 }

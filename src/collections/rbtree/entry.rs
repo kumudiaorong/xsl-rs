@@ -1,4 +1,3 @@
-use super::flag::Rela;
 use super::map::RBTreeMap;
 use super::node::NodeRef;
 use crate::alloc::Allocator;
@@ -328,7 +327,7 @@ where
 {
     key: K,
     node: NodeRef<K, V>,
-    rela: Rela,
+    rela: u8,
     tree: &'a mut RBTreeMap<K, V, A>,
 }
 
@@ -339,7 +338,7 @@ where
     pub(super) fn new(
         key: K,
         node: NodeRef<K, V>,
-        rela: Rela,
+        rela: u8,
         tree: &'a mut RBTreeMap<K, V, A>,
     ) -> Self {
         VacantEntry {

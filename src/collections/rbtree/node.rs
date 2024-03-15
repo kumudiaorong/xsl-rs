@@ -1,4 +1,4 @@
-use super::flag::{Flag, Rela};
+use super::flag::{toggle_rela, Flag, LEFT, PARENT, RIGHT};
 use crate::alloc::{handle_alloc_error, Allocator};
 use core::alloc::Layout;
 use core::borrow::Borrow;
@@ -54,8 +54,141 @@ impl<K, V> NodeRef<K, V> {
         self.node.unwrap()
     }
     pub fn into_ref_key_value<'a>(self) -> (&'a K, &'a V) {
-        let node = unsafe { self.node.unwrap().as_ref() };
+        let node = self.into_ref();
         (&node.key_value.0, &node.key_value.1)
+    }
+    #[cfg(debug_assertions)]
+    pub fn new_in<A>(alloc: &A) -> Self
+    where
+        A: Allocator,
+    {
+        Self {
+            node: Some(Node::new_in(alloc)),
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    pub fn new_in<A>(alloc: A) -> Self
+    where
+        A: Allocator,
+    {
+        Self {
+            node: Some(Node::new_in(alloc)),
+        }
+    }
+    pub fn search<Q>(&self, key: &Q) -> (NodeRef<K, V>, Result<(), u8>)
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Ord,
+    {
+        let mut cur = self;
+        let mut last;
+        let mut rela;
+        loop {
+            rela = match key.borrow().cmp(cur.key_value.0.borrow()) {
+                core::cmp::Ordering::Equal => return (cur.clone(), Ok(())),
+                core::cmp::Ordering::Less => {
+                    last = cur;
+                    cur = &cur.next[0];
+                    LEFT
+                }
+                core::cmp::Ordering::Greater => {
+                    last = cur;
+                    cur = &cur.next[1];
+                    RIGHT
+                }
+            };
+            if cur.is_none() {
+                return (last.clone(), Err(rela));
+            }
+        }
+    }
+    pub fn rest_double_red_adjust(&mut self) {
+        let mut child_node = self.clone();
+        let mut parent_node = child_node.next[2].clone();
+        let mut gparent = parent_node.next[2].clone();
+        let prela = parent_node.flag.rela();
+        let mut uncle = gparent.next[toggle_rela(prela)].clone();
+        gparent.flag.set_red();
+
+        if uncle.flag.is_black() {
+            let grela = gparent.flag.rela();
+            let crela = child_node.flag.rela();
+            let mut next_parent = gparent.next[2].clone();
+            if child_node.flag.rela() != prela {
+                let mut lgchild = child_node.next[crela].clone();
+                let mut rgchild = child_node.next[prela].clone();
+                gparent.set_parent(child_node.clone(), crela as u8);
+                gparent.next[prela] = lgchild.clone();
+                lgchild.set_parent(gparent.clone(), prela as u8);
+                next_parent.next[grela] = child_node.clone();
+                child_node.set_parent(next_parent, grela as u8);
+                child_node.next[crela] = gparent.clone();
+                child_node.next[prela] = parent_node.clone();
+                rgchild.set_parent(parent_node.clone(), crela as u8);
+                parent_node.set_parent(child_node.clone(), prela as u8);
+                parent_node.next[crela] = rgchild;
+                core::mem::swap(&mut child_node, &mut parent_node);
+            } else {
+                let toggle_grela = toggle_rela(crela);
+                let mut brother = parent_node.next[toggle_grela].clone();
+                gparent.set_parent(parent_node.clone(), toggle_grela as u8);
+                gparent.next[crela] = brother.clone();
+                brother.set_parent(gparent.clone(), crela as u8);
+                next_parent.next[grela] = parent_node.clone();
+                parent_node.set_parent(next_parent, grela as u8);
+                parent_node.next[toggle_grela] = gparent.clone();
+            }
+        } else {
+            uncle.flag.set_black();
+            let next_parent = gparent.next[2].clone();
+            if next_parent.flag.is_red() {
+                gparent.rest_double_red_adjust();
+            } else if gparent.flag.rela() == PARENT as usize {
+                gparent.flag.set_black();
+            }
+        }
+        parent_node.flag.set_black();
+    }
+    pub fn double_red_adjust(&mut self) {
+        let mut child_node: NodeRef<K, V> = self.clone();
+        let mut parent_node = child_node.next[2].clone();
+        let mut gparent = parent_node.next[2].clone();
+        let prela = parent_node.flag.rela();
+        let mut uncle = gparent.next[toggle_rela(prela)].clone();
+        gparent.flag.set_red();
+
+        if uncle.is_none() {
+            let crela = child_node.flag.rela();
+            let grela = gparent.flag.rela();
+            if crela != prela {
+                let mut next_parent = gparent.next[2].clone();
+                next_parent.next[grela] = child_node.clone();
+                child_node.set_parent(next_parent, grela as u8);
+                child_node.next[prela] = parent_node.clone();
+                parent_node.set_parent(child_node.clone(), prela as u8);
+                gparent.set_parent(child_node.clone(), crela as u8);
+                child_node.next[crela] = gparent.clone();
+                parent_node.next[crela] = NodeRef::none();
+                gparent.next[prela] = NodeRef::none();
+                parent_node = child_node;
+            } else {
+                let mut next_parent = gparent.next[2].clone();
+                parent_node.next[toggle_rela(crela)] = gparent.clone();
+                gparent.set_parent(parent_node.clone(), toggle_rela(crela) as u8);
+                next_parent.next[grela] = parent_node.clone();
+                parent_node.set_parent(next_parent, grela as u8);
+                gparent.next[crela] = NodeRef::none();
+            }
+        } else {
+            uncle.flag.set_black();
+            let next_parent = gparent.next[2].clone();
+            if next_parent.flag.is_red() {
+                gparent.rest_double_red_adjust();
+            } else if gparent.flag.rela() == PARENT as usize {
+                gparent.flag.set_black();
+            }
+        }
+        parent_node.flag.set_black();
     }
 }
 impl<K, V> Deref for NodeRef<K, V> {
@@ -127,7 +260,7 @@ where
     }
 }
 impl<K, V> Node<K, V> {
-    pub(super) fn new_in<A>(alloc: &A) -> NonNull<Self>
+    pub(super) fn new_in<A>(alloc: A) -> NonNull<Self>
     where
         A: Allocator,
     {
@@ -140,7 +273,8 @@ impl<K, V> Node<K, V> {
     }
     /// make a new node with key and value
     ///
-    pub fn set_parent(&mut self, parent: NodeRef<K, V>, rela: Rela) {
+    #[inline(always)]
+    pub fn set_parent(&mut self, parent: NodeRef<K, V>, rela: u8) {
         self.next[2] = parent;
         self.flag.set_rela(rela);
     }
@@ -150,81 +284,28 @@ impl<K, V> Node<K, V> {
             node: NonNull::new(self as *const _ as *mut _),
         };
         let crela = child.flag.rela();
-        let mut gchild = child.next[crela.toggle() as usize].clone();
+        let mut gchild = child.next[toggle_rela(crela)].clone();
         if gchild.is_some() {
-            gchild.set_parent(parent.clone(), crela);
+            gchild.set_parent(parent.clone(), crela as u8);
         }
 
-        parent.next[crela as usize] = gchild;
+        parent.next[crela] = gchild;
         let prela = parent.flag.rela();
         let mut gparent = parent.next[2].clone();
 
-        gparent.next[prela as usize] = child.clone();
-        parent.set_parent(child.clone(), crela.toggle());
-        child.next[crela.toggle() as usize] = parent;
-        child.set_parent(gparent, prela);
+        gparent.next[prela] = child.clone();
+        parent.set_parent(child.clone(), toggle_rela(crela) as u8);
+        child.next[toggle_rela(crela)] = parent;
+        child.set_parent(gparent, prela as u8);
     }
-    pub fn double_red_adjust(&mut self) {
-        let mut child_node = self;
-        let mut parent_node = &mut *child_node.next[2].clone();
-        let mut gparent = parent_node.next[2].clone();
-        let mut uncle = gparent.next[parent_node.flag.rela().toggle() as usize].clone();
-        gparent.flag.set_red();
-
-        if uncle.is_none() || uncle.flag.is_black() {
-            if child_node.flag.rela() != parent_node.flag.rela() {
-                child_node.single_rotate();
-                core::mem::swap(&mut child_node, &mut parent_node);
-            }
-            parent_node.single_rotate();
-        } else {
-            uncle.flag.set_black();
-            let next_parent = gparent.next[2].clone();
-            if next_parent.is_none() {
-                gparent.flag.set_black();
-            } else if next_parent.flag.is_red() {
-                gparent.double_red_adjust();
-            } else if next_parent.flag.is_root() {
-                gparent.flag.set_black();
-            }
-        }
-        parent_node.flag.set_black();
-    }
-    pub(super) fn search<Q>(&self, key: &Q) -> (NodeRef<K, V>, Result<(), Rela>)
-    where
-        K: Borrow<Q>,
-        Q: ?Sized + Ord,
-    {
-        let mut cur: NodeRef<K, V> = NodeRef {
-            node: NonNull::new(self as *const _ as *mut _),
-        };
-        let mut next;
-        loop {
-            let rela = match key.borrow().cmp(cur.key_value.0.borrow()) {
-                core::cmp::Ordering::Equal => return (cur, Ok(())),
-                core::cmp::Ordering::Less => {
-                    next = cur.next[0].clone();
-                    Rela::LEFT
-                }
-                core::cmp::Ordering::Greater => {
-                    next = cur.next[1].clone();
-                    Rela::RIGHT
-                }
-            };
-            if next.is_none() {
-                return (cur, Err(rela));
-            }
-            cur = next;
-        }
-    }
-    pub(super) fn rasie(&mut self, rela: Rela) {
+    pub(super) fn rasie(&mut self, rela: usize) {
         let parent = self;
-        let brother_ptr = parent.next[rela.toggle() as usize].clone();
+        let brother_ptr = parent.next[toggle_rela(rela)].clone();
         let mut brother = brother_ptr;
         if brother.flag.is_black() {
-            let right_nephew_ptr = brother.next[rela.toggle() as usize].clone();
+            let right_nephew_ptr = brother.next[toggle_rela(rela)].clone();
             let mut right_nephew = right_nephew_ptr;
-            let left_nephew_ptr = brother.next[rela as usize].clone();
+            let left_nephew_ptr = brother.next[rela].clone();
             let mut left_nephew = left_nephew_ptr;
             if right_nephew.flag.is_red() {
                 brother.single_rotate();
@@ -240,7 +321,7 @@ impl<K, V> Node<K, V> {
                 brother.flag.set_red();
                 if parent.flag.is_red() {
                     parent.flag.set_black();
-                } else if parent.flag.rela() != Rela::PARENT {
+                } else if parent.flag.rela() != PARENT as usize {
                     parent.next[2].rasie(parent.flag.rela());
                 }
             }

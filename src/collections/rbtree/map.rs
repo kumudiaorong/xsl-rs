@@ -1,19 +1,21 @@
 mod values;
 use super::{
     entry::{Entry, OccupiedEntry, VacantEntry},
-    flag::{Color, Rela},
+    flag::Color,
     iter::{Iter, IterMut},
     node::Node,
     node::NodeRef,
 };
-use crate::alloc::{Allocator, Global};
+use crate::{
+    alloc::{Allocator, Global},
+    collections::rbtree::flag::{toggle_rela, LEFT, PARENT, RIGHT},
+};
 use core::{
     alloc::Layout,
     borrow::Borrow,
     cmp::Ordering,
     fmt::{Debug, Display},
     ops::Index,
-    ptr::NonNull,
 };
 use values::{Values, ValuesMut};
 pub struct RBTreeMap<K, V, A = Global>
@@ -166,7 +168,7 @@ where
             alloc: &A,
             src: NodeRef<K, V>,
             mut dst: NodeRef<K, V>,
-            rela: Rela,
+            rela: u8,
         ) -> (NodeRef<K, V>, NodeRef<K, V>)
         where
             K: Clone,
@@ -175,19 +177,20 @@ where
         {
             let src_child_ptr = src.next[rela as usize].clone();
             let src_child = src_child_ptr.clone();
-            let mut new_node_ptr = Node::new_in(alloc);
-            let new_node = unsafe { new_node_ptr.as_mut() };
-            new_node.init_from(&*src_child);
-            dst.next[rela as usize] = NodeRef {
-                node: Some(new_node_ptr),
+            let mut new_node = {
+                #[cfg(debug_assertions)]
+                {
+                    NodeRef::new_in(&alloc)
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    NodeRef::new_in(alloc.clone())
+                }
             };
-            new_node.set_parent(dst, rela);
-            (
-                src_child_ptr,
-                NodeRef {
-                    node: Some(new_node_ptr),
-                },
-            )
+            new_node.init_from(&*src_child);
+            dst.next[rela as usize] = new_node.clone();
+            new_node.set_parent(dst, rela as u8);
+            (src_child_ptr, new_node)
         }
         use crate::alloc::Vec;
         let mut new_tree = Self::new_in(self.alloc.clone());
@@ -199,21 +202,16 @@ where
             &new_tree.alloc,
             self.root.clone(),
             new_tree.root.clone(),
-            Rela::PARENT,
+            PARENT,
         ));
         while let Some((src, dst)) = stack.pop() {
             //First determine whether the child node is empty
             //Simple performance test shows that the following code is faster than the next code
             if !src.next[0].is_none() {
-                stack.push(new_branch(
-                    &new_tree.alloc,
-                    src.clone(),
-                    dst.clone(),
-                    Rela::LEFT,
-                ));
+                stack.push(new_branch(&new_tree.alloc, src.clone(), dst.clone(), LEFT));
             }
             if !src.next[1].is_none() {
-                stack.push(new_branch(&new_tree.alloc, src, dst, Rela::RIGHT));
+                stack.push(new_branch(&new_tree.alloc, src, dst, RIGHT));
             }
         }
         new_tree.length = self.length;
@@ -287,20 +285,16 @@ where
         let mut stack = Vec::new();
         stack.push(self.root.next[2].clone());
         while !stack.is_empty() {
-            let node = stack.pop().unwrap();
+            let mut node = stack.pop().unwrap();
             if node.is_none() {
                 continue;
             }
-            let node = unsafe { node.unwrap().as_ref() };
             stack.push(node.next[0].clone());
             stack.push(node.next[1].clone());
             unsafe {
-                let ptr = node as *const _ as *mut Node<K, V>;
-                core::ptr::drop_in_place(ptr);
-                self.alloc.deallocate(
-                    NonNull::new(ptr.cast()).unwrap(),
-                    Layout::new::<Node<K, V>>(),
-                );
+                core::ptr::drop_in_place(&mut node.key_value);
+                self.alloc
+                    .deallocate(node.unwrap().cast(), Layout::new::<Node<K, V>>());
             }
         }
         self.length = 0;
@@ -853,11 +847,7 @@ where
                     return node;
                 }
                 unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        &node.next[0].unwrap().as_ref().key_value,
-                        &mut node.key_value,
-                        1,
-                    );
+                    core::ptr::copy_nonoverlapping(&node.next[0].key_value, &mut node.key_value, 1);
                 }
                 return node.into_ref().next[0].clone();
             }
@@ -871,50 +861,47 @@ where
         let mut parent_ptr = repl_node.next[2].clone();
         let rela = repl_node.flag.rela();
         let color = repl_node.flag.color();
-        parent_ptr.next[rela as usize] = NodeRef::none();
+        parent_ptr.next[rela] = NodeRef::none();
         self.length -= 1;
         unsafe {
             self.alloc
                 .deallocate(repl_node.unwrap().cast(), Layout::new::<Node<K, V>>());
         }
-        if color == Color::RED || parent_ptr.flag.is_root() {
+        if color == Color::RED || rela == PARENT as usize {
             return kv;
         }
-        let mut brother_ptr = parent_ptr.next[rela.toggle() as usize].unwrap();
-        if unsafe { brother_ptr.as_ref() }.flag.is_red() {
-            unsafe { brother_ptr.as_mut() }.single_rotate();
-            let mut nephew_ptr = parent_ptr.next[rela.toggle() as usize].unwrap();
-            let gnephew_ptr = unsafe { nephew_ptr.as_ref() }.next[rela as usize].clone();
+        let mut brother_ptr = parent_ptr.next[toggle_rela(rela)].clone();
+        if brother_ptr.flag.is_red() {
+            brother_ptr.single_rotate();
+            let mut nephew_ptr = parent_ptr.next[toggle_rela(rela)].clone();
+            let mut gnephew_ptr = nephew_ptr.next[rela].clone();
             if gnephew_ptr.is_none() {
-                let nephew = unsafe { nephew_ptr.as_mut() };
-                nephew.single_rotate();
+                nephew_ptr.single_rotate();
                 parent_ptr.flag.set_red();
             } else {
-                let gnephew = unsafe { gnephew_ptr.unwrap().as_mut() };
-                gnephew.single_rotate();
-                gnephew.single_rotate();
+                gnephew_ptr.single_rotate();
+                gnephew_ptr.single_rotate();
             }
-            unsafe { brother_ptr.as_mut() }.flag.set_black();
+            brother_ptr.flag.set_black();
         } else {
-            let mut nephew = unsafe { brother_ptr.as_ref() }.next[rela as usize].clone();
+            let mut nephew = brother_ptr.next[rela].clone();
             if nephew.is_none() {
                 if parent_ptr.flag.is_red() {
-                    unsafe { brother_ptr.as_mut() }.single_rotate();
+                    brother_ptr.single_rotate();
                 } else {
-                    nephew = unsafe { brother_ptr.as_ref() }.next[rela.toggle() as usize].clone();
+                    nephew = brother_ptr.next[toggle_rela(rela)].clone();
                     if nephew.is_none() {
-                        unsafe { brother_ptr.as_mut() }.flag.set_red();
-                        if parent_ptr.flag.rela() != Rela::PARENT {
+                        brother_ptr.flag.set_red();
+                        if parent_ptr.flag.rela() != PARENT as usize {
                             let rela = parent_ptr.flag.rela();
-                            unsafe { parent_ptr.next[2].unwrap().as_mut() }.rasie(rela);
+                            parent_ptr.next[2].rasie(rela);
                         }
                     } else {
-                        unsafe { brother_ptr.as_mut() }.single_rotate();
-                        unsafe { nephew.unwrap().as_mut() }.flag.set_black();
+                        brother_ptr.single_rotate();
+                        nephew.flag.set_black();
                     }
                 }
             } else {
-                let nephew = unsafe { nephew.unwrap().as_mut() };
                 nephew.single_rotate();
                 nephew.single_rotate();
                 nephew.flag.set_color(parent_ptr.flag.color());
@@ -923,45 +910,53 @@ where
         }
         kv
     }
-    pub(super) fn raw_search<Q>(&self, key: &Q) -> (NodeRef<K, V>, Result<(), Rela>)
+    pub(super) fn raw_search<Q>(&self, key: &Q) -> (NodeRef<K, V>, Result<(), u8>)
     where
         K: Borrow<Q>,
         Q: ?Sized + Ord,
     {
         if self.len() == 0 {
-            return (self.root.clone(), Err(Rela::PARENT));
+            return (self.root.clone(), Err(PARENT));
         }
         self.root.next[2].search(key)
     }
     pub(super) fn raw_insert(
         &mut self,
         mut parent: NodeRef<K, V>,
-        rela: Rela,
+        rela: u8,
         kv: (K, V),
     ) -> NodeRef<K, V> {
-        let mut node = NodeRef {
-            node: Some(Node::new_in(&self.alloc)),
-        };
+        let mut node_ref = NodeRef::new_in(
+            #[cfg(debug_assertions)]
+            {
+                &self.alloc
+            },
+            #[cfg(not(debug_assertions))]
+            {
+                self.alloc.clone()
+            },
+        );
+        parent.next[rela as usize] = node_ref.clone();
+        let node = &mut *node_ref;
         unsafe {
             core::ptr::write(&mut node.key_value, kv);
         }
-        parent.next[rela as usize] = node.clone();
         node.set_parent(parent.clone(), rela);
         self.length += 1;
         if self.len() == 1 {
             node.flag.set_black();
         } else {
             if parent.flag.is_red() {
-                node.double_red_adjust();
+                node_ref.double_red_adjust();
             }
         }
-        node
+        node_ref
     }
     pub(super) fn raw_first(&self) -> NodeRef<K, V> {
-        unsafe { self.root.next[2].unwrap().as_ref() }.min()
+        self.root.next[2].min()
     }
     pub(super) fn raw_last(&self) -> NodeRef<K, V> {
-        unsafe { self.root.next[2].unwrap().as_ref() }.max()
+        self.root.next[2].max()
     }
 }
 mod tests;
