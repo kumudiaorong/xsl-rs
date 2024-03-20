@@ -189,20 +189,18 @@ where
             V: Clone,
             A: Allocator,
         {
-            let src_child_ptr = src.next[rela as usize].clone().into_owned().unwrap();
+            let src_child_ptr = src.next[rela as usize].get_owned();
             let src_child = src_child_ptr.clone();
             let mut new_node = {
                 #[cfg(debug_assertions)]
                 {
-                    NodeRef::new_in(&alloc)
+                    OwnedNodeRef::new_in(&alloc)
                 }
                 #[cfg(not(debug_assertions))]
                 {
-                    NodeRef::new_in(alloc.clone())
+                    OwnedNodeRef::new_in(alloc.clone())
                 }
-            }
-            .into_owned()
-            .unwrap();
+            };
             new_node.init_from(&*src_child);
             dst.next[rela as usize] = new_node.get_node_ref();
             new_node.set_parent(dst, rela);
@@ -216,8 +214,8 @@ where
         let mut stack = Vec::new();
         stack.push(new_branch(
             &new_tree.alloc,
-            self.root.clone().into_owned().unwrap(),
-            new_tree.root.clone().into_owned().unwrap(),
+            self.root.get_owned(),
+            new_tree.root.get_owned(),
             ROOT,
         ));
         while let Some((src, dst)) = stack.pop() {
@@ -304,9 +302,9 @@ where
             stack.push(node.next[0].clone());
             stack.push(node.next[1].clone());
             unsafe {
-                core::ptr::drop_in_place(&mut node.key_value);
+                core::ptr::drop_in_place(node.ptr.as_mut().unwrap().as_mut());
                 self.alloc
-                    .deallocate(node.unwrap().cast(), Layout::new::<Node<K, V>>());
+                    .deallocate(node.ptr.unwrap().cast(), Layout::new::<Node<K, V>>());
             }
         }
         self.length = 0;
@@ -486,7 +484,7 @@ where
         if self.is_empty() {
             Iter::new_empty()
         } else {
-            Iter::new(self.root.clone().into_owned().unwrap(), self.length)
+            Iter::new(self.root.get_owned(), self.length)
         }
     }
     /// Gets a mutable iterator over the entries of the map, sorted by key.
@@ -513,7 +511,7 @@ where
         if self.is_empty() {
             IterMut::new_empty()
         } else {
-            IterMut::new(self.root.clone().into_owned().unwrap(), self.length)
+            IterMut::new(self.root.get_owned(), self.length)
         }
     }
 }
@@ -790,12 +788,8 @@ where
 impl<K, V> RBTreeMap<K, V> {
     pub fn new() -> Self {
         let alloc = Global::default();
-        let mut root = NodeRef {
-            node: Some(Node::new_in(&alloc)),
-        };
-        root.flag.set_root();
         RBTreeMap {
-            root,
+            root: NodeRef::none(),
             alloc,
             length: 0,
         }
@@ -833,9 +827,9 @@ where
                 unsafe {
                     core::ptr::copy_nonoverlapping(&node.next[0].key_value, &mut node.key_value, 1);
                 }
-                return node.next[0].clone().into_owned().unwrap();
+                return node.next[0].get_owned();
             }
-            let repl_node = unsafe { node.next[1].clone().into_owned().unwrap().min() };
+            let repl_node = unsafe { node.next[1].get_owned().min() };
             unsafe {
                 core::ptr::copy_nonoverlapping(&repl_node.key_value, &mut node.key_value, 1);
             }
@@ -860,10 +854,7 @@ where
         }
         let toggle_rela = toggle_rela(rela);
         parent.next[rela as usize] = NodeRef::none();
-        let mut brother = parent.next[toggle_rela as usize]
-            .clone()
-            .into_owned()
-            .unwrap();
+        let mut brother = parent.next[toggle_rela as usize].get_owned();
         let prela = parent.flag.rela();
         if brother.flag.is_red() {
             if parent.flag.is_root() {
@@ -874,7 +865,7 @@ where
                 brother.flag.set_black();
             }
             parent.next[toggle_rela as usize] = NodeRef::none();
-            let mut nephew = brother.next[rela as usize].clone().into_owned().unwrap();
+            let mut nephew = brother.next[rela as usize].get_owned();
             match (
                 nephew.next[rela as usize].clone().into_owned(),
                 nephew.next[toggle_rela as usize].clone().into_owned(),
@@ -967,7 +958,7 @@ where
         if self.len() == 0 {
             return NodeDesc::NotFound(NdNotFound::Root);
         }
-        match self.root.clone().into_owned().unwrap().search(key) {
+        match self.root.get_owned().search(key) {
             SearchResult::Found(node) => NodeDesc::Found(node),
             SearchResult::NotFound(node, rela) => {
                 NodeDesc::NotFound(NdNotFound::Normal(node, rela))
@@ -978,13 +969,13 @@ where
         if self.is_empty() {
             return None;
         }
-        Some(unsafe { self.root.clone().into_owned().unwrap().min() })
+        Some(unsafe { self.root.get_owned().min() })
     }
     pub fn raw_last(&self) -> Option<OwnedNodeRef<K, V>> {
         if self.is_empty() {
             return None;
         }
-        Some(unsafe { self.root.clone().into_owned().unwrap().max() })
+        Some(unsafe { self.root.get_owned().max() })
     }
 }
 mod tests;

@@ -13,81 +13,126 @@ fn debug_next<K, V>(node: &OwnedNodeRef<K, V>) -> [Option<&K>; 3] {
         node.as_ref().map(|x| &unsafe { x.as_ref() }.key_value.0)
     };
     [
-        get_key(&node.next[0].node),
-        get_key(&node.next[1].node),
-        get_key(&Some(node.parent.node)),
+        get_key(&node.next[0].ptr),
+        get_key(&node.next[1].ptr),
+        get_key(&Some(node.parent.ptr)),
     ]
 }
+
 pub struct Node<K, V> {
     pub key_value: (K, V),
     pub next: [NodeRef<K, V>; 2],
     pub parent: OwnedNodeRef<K, V>,
     pub flag: Flag,
 }
+
+impl<K, V> Debug for Node<K, V>
+where
+    K: Debug,
+    V: Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "[{},{},{:?},{:?},{:?},{:?},{:?}]",
+            self.flag.color(),
+            self.flag.rela(),
+            self.key_value.0,
+            self.key_value.1,
+            match self.next[0].ptr {
+                Some(n) => &unsafe { n.as_ref() }.key_value.0,
+                None => &self.key_value.0,
+            },
+            match self.next[1].ptr {
+                Some(n) => &unsafe { n.as_ref() }.key_value.0,
+                None => &self.key_value.0,
+            },
+            if self.flag.is_root() {
+                &self.key_value.0
+            } else {
+                &self.parent.key_value.0
+            }
+        )
+    }
+}
+
+impl<K, V> Display for Node<K, V>
+where
+    K: Display,
+    V: Display,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "[{},{},{},{}]",
+            self.flag.color(),
+            self.flag.rela(),
+            self.key_value.0,
+            self.key_value.1
+        )
+    }
+}
+
+impl<K, V> Node<K, V>
+where
+    K: Clone,
+    V: Clone,
+{
+    pub fn init_from(&mut self, source: &Self) {
+        self.key_value = source.key_value.clone();
+        self.flag = source.flag;
+    }
+}
+
+impl<K, V> Node<K, V> {
+    pub fn new_in<A>(alloc: A) -> NonNull<Self>
+    where
+        A: Allocator,
+    {
+        let layout = Layout::new::<Node<K, V>>();
+        let ptr = match alloc.allocate_zeroed(layout) {
+            Ok(ptr) => ptr,
+            Err(_) => handle_alloc_error(layout),
+        };
+        ptr.cast()
+    }
+    #[inline(always)]
+    pub fn set_parent(&mut self, parent: OwnedNodeRef<K, V>, rela: u8) {
+        self.parent = parent;
+        self.flag.set_rela(rela);
+    }
+}
+
 #[derive(Copy)]
 pub struct NodeRef<K, V> {
-    pub(super) node: Option<NonNull<Node<K, V>>>,
+    pub(super) ptr: Option<NonNull<Node<K, V>>>,
 }
 impl<K, V> Clone for NodeRef<K, V> {
     fn clone(&self) -> Self {
-        Self { node: self.node }
+        Self { ptr: self.ptr }
     }
 }
 impl<K, V> NodeRef<K, V> {
-    pub fn into_owned(self) -> Option<OwnedNodeRef<K, V>> {
-        self.node.map(|node| OwnedNodeRef { node })
-    }
     pub fn none() -> Self {
-        Self { node: None }
+        Self { ptr: None }
     }
     pub fn is_none(&self) -> bool {
-        self.node.is_none()
+        self.ptr.is_none()
     }
     pub fn is_some(&self) -> bool {
-        self.node.is_some()
+        self.ptr.is_some()
     }
-    pub fn into_mut<'a>(self) -> &'a mut Node<K, V> {
-        unsafe { self.node.unwrap().as_mut() }
+    pub fn into_owned(self) -> Option<OwnedNodeRef<K, V>> {
+        self.ptr.map(|ptr| OwnedNodeRef { ptr })
     }
-    pub fn into_ref<'a>(self) -> &'a Node<K, V> {
-        unsafe { self.node.unwrap().as_ref() }
-    }
-    pub fn unwrap(&self) -> NonNull<Node<K, V>> {
-        self.node.unwrap()
-    }
-    pub fn into_ref_key_value<'a>(self) -> (&'a K, &'a V) {
-        let node = self.into_ref();
-        (&node.key_value.0, &node.key_value.1)
-    }
-
-    #[cfg(debug_assertions)]
-    pub fn new_in<A>(alloc: &A) -> Self
-    where
-        A: Allocator,
-    {
-        Self {
-            node: Some(Node::new_in(alloc)),
-        }
-    }
-    #[cfg(not(debug_assertions))]
-    pub fn new_in<A>(alloc: A) -> Self
-    where
-        A: Allocator,
-    {
-        Self {
-            node: Some(Node::new_in(alloc)),
-        }
+    pub fn get_owned(&self) -> OwnedNodeRef<K, V> {
+        self.ptr.map(|ptr| OwnedNodeRef { ptr }).unwrap()
     }
 }
 impl<K, V> Deref for NodeRef<K, V> {
     type Target = Node<K, V>;
     fn deref(&self) -> &Self::Target {
-        unsafe { self.node.unwrap().as_ref() }
-    }
-}
-impl<K, V> DerefMut for NodeRef<K, V> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.node.unwrap().as_mut() }
+        unsafe { self.ptr.unwrap().as_ref() }
     }
 }
 pub enum SearchResult<K, V> {
@@ -97,17 +142,35 @@ pub enum SearchResult<K, V> {
 
 #[derive(Copy)]
 pub struct OwnedNodeRef<K, V> {
-    pub(super) node: NonNull<Node<K, V>>,
+    pub(super) ptr: NonNull<Node<K, V>>,
 }
 impl<K, V> Clone for OwnedNodeRef<K, V> {
     fn clone(&self) -> Self {
-        Self { node: self.node }
+        Self { ptr: self.ptr }
     }
 }
 impl<K, V> OwnedNodeRef<K, V> {
+    #[cfg(debug_assertions)]
+    pub fn new_in<A>(alloc: &A) -> Self
+    where
+        A: Allocator,
+    {
+        Self {
+            ptr: Node::new_in(alloc),
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    pub fn new_in<A>(alloc: A) -> Self
+    where
+        A: Allocator,
+    {
+        Self {
+            ptr: Some(Node::new_in(alloc)),
+        }
+    }
     pub fn get_node_ref(&self) -> NodeRef<K, V> {
         NodeRef {
-            node: Some(self.node),
+            ptr: Some(self.ptr),
         }
     }
     #[inline(always)]
@@ -150,7 +213,7 @@ impl<K, V> OwnedNodeRef<K, V> {
                 node.parent.clone()
             }
         } else {
-            self.next[1].clone().into_owned().unwrap().min()
+            self.next[1].get_owned().min()
         }
     }
     pub unsafe fn next_back_unchecked(&self) -> Self {
@@ -165,17 +228,17 @@ impl<K, V> OwnedNodeRef<K, V> {
                 node.parent.clone()
             }
         } else {
-            self.next[0].clone().into_owned().unwrap().max()
+            self.next[0].get_owned().max()
         }
     }
     pub fn unwrap(&self) -> NonNull<Node<K, V>> {
-        self.node
+        self.ptr
     }
     pub fn into_mut<'a>(mut self) -> &'a mut Node<K, V> {
-        unsafe { self.node.as_mut() }
+        unsafe { self.ptr.as_mut() }
     }
     pub fn into_ref<'a>(self) -> &'a Node<K, V> {
-        unsafe { self.node.as_ref() }
+        unsafe { self.ptr.as_ref() }
     }
     pub fn into_ref_key_value<'a>(self) -> (&'a K, &'a V) {
         let node = self.into_ref();
@@ -213,7 +276,7 @@ impl<K, V> OwnedNodeRef<K, V> {
         let mut parent = child.parent.clone();
         let mut gparent = parent.parent.clone();
         let prela = parent.flag.rela();
-        let mut uncle = gparent.next[toggle_rela(prela) as usize].clone();
+        let mut uncle = gparent.next[toggle_rela(prela) as usize].get_owned();
         gparent.flag.set_red();
 
         if uncle.flag.is_black() {
@@ -226,14 +289,8 @@ impl<K, V> OwnedNodeRef<K, V> {
                 } else {
                     gparent.parent.set_child(child.clone(), grela);
                 }
-                gparent.set_child(
-                    child.next[crela as usize].clone().into_owned().unwrap(),
-                    prela,
-                );
-                parent.set_child(
-                    child.next[prela as usize].clone().into_owned().unwrap(),
-                    crela,
-                );
+                gparent.set_child(child.next[crela as usize].get_owned(), prela);
+                parent.set_child(child.next[prela as usize].get_owned(), crela);
                 child.set_child(gparent.clone(), crela);
                 child.set_child(parent.clone(), prela);
                 parent = child;
@@ -245,13 +302,7 @@ impl<K, V> OwnedNodeRef<K, V> {
                     gparent.parent.set_child(parent.clone(), grela);
                 }
                 let toggle_grela = toggle_rela(crela);
-                gparent.set_child(
-                    parent.next[toggle_grela as usize]
-                        .clone()
-                        .into_owned()
-                        .unwrap(),
-                    crela,
-                );
+                gparent.set_child(parent.next[toggle_grela as usize].get_owned(), crela);
                 parent.set_child(gparent, toggle_grela);
             }
         } else {
@@ -273,7 +324,7 @@ impl<K, V> OwnedNodeRef<K, V> {
         let mut parent = child.parent.clone();
         let mut gparent = parent.parent.clone();
         let prela = parent.flag.rela();
-        let mut uncle = gparent.next[toggle_rela(prela) as usize].clone();
+        let uncle = gparent.next[toggle_rela(prela) as usize].clone();
         gparent.flag.set_red();
         if uncle.is_none() {
             let crela = child.flag.rela();
@@ -302,7 +353,7 @@ impl<K, V> OwnedNodeRef<K, V> {
                 parent.set_child(gparent, toggle_rela(crela));
             }
         } else {
-            uncle.flag.set_black();
+            uncle.into_owned().unwrap().flag.set_black();
             parent.flag.set_black();
             if gparent.flag.is_root() {
                 gparent.flag.set_black();
@@ -318,17 +369,11 @@ impl<K, V> OwnedNodeRef<K, V> {
         let mut new_root = None;
         let toggle_rela = toggle_rela(rela);
         let mut parent = self.clone();
-        let mut brother = parent.next[toggle_rela as usize]
-            .clone()
-            .into_owned()
-            .unwrap();
+        let mut brother = parent.next[toggle_rela as usize].get_owned();
         let prela = parent.flag.rela();
         if brother.flag.is_black() {
-            let mut rnephew = brother.next[toggle_rela as usize]
-                .clone()
-                .into_owned()
-                .unwrap();
-            let mut lnephew = brother.next[rela as usize].clone().into_owned().unwrap();
+            let mut rnephew = brother.next[toggle_rela as usize].get_owned();
+            let mut lnephew = brother.next[rela as usize].get_owned();
             if rnephew.flag.is_red() {
                 if parent.flag.is_root() {
                     brother.flag.set_root();
@@ -350,17 +395,8 @@ impl<K, V> OwnedNodeRef<K, V> {
                 }
                 lnephew.flag.set_color(parent.flag.color());
                 parent.flag.set_black();
-                parent.set_child(
-                    lnephew.next[rela as usize].clone().into_owned().unwrap(),
-                    toggle_rela,
-                );
-                brother.set_child(
-                    lnephew.next[toggle_rela as usize]
-                        .clone()
-                        .into_owned()
-                        .unwrap(),
-                    rela,
-                );
+                parent.set_child(lnephew.next[rela as usize].get_owned(), toggle_rela);
+                brother.set_child(lnephew.next[toggle_rela as usize].get_owned(), rela);
                 lnephew.set_child(parent, rela);
                 lnephew.set_child(brother, toggle_rela);
             } else {
@@ -382,10 +418,7 @@ impl<K, V> OwnedNodeRef<K, V> {
                 parent.parent.set_child(brother.clone(), prela);
             }
             parent.flag.set_red();
-            parent.set_child(
-                brother.next[rela as usize].clone().into_owned().unwrap(),
-                toggle_rela,
-            );
+            parent.set_child(brother.next[rela as usize].get_owned(), toggle_rela);
             brother.set_child(parent.clone(), rela);
 
             if let Some(nr) = parent.rasie(rela) {
@@ -398,89 +431,11 @@ impl<K, V> OwnedNodeRef<K, V> {
 impl<K, V> Deref for OwnedNodeRef<K, V> {
     type Target = Node<K, V>;
     fn deref(&self) -> &Self::Target {
-        unsafe { self.node.as_ref() }
+        unsafe { self.ptr.as_ref() }
     }
 }
 impl<K, V> DerefMut for OwnedNodeRef<K, V> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.node.as_mut() }
-    }
-}
-
-impl<K, V> Debug for Node<K, V>
-where
-    K: Debug,
-    V: Debug,
-{
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "[{},{},{:?},{:?},{:?},{:?},{:?}]",
-            self.flag.color(),
-            self.flag.rela(),
-            self.key_value.0,
-            self.key_value.1,
-            match self.next[0].node {
-                Some(n) => &unsafe { n.as_ref() }.key_value.0,
-                None => &self.key_value.0,
-            },
-            match self.next[1].node {
-                Some(n) => &unsafe { n.as_ref() }.key_value.0,
-                None => &self.key_value.0,
-            },
-            if self.flag.is_root() {
-                &self.key_value.0
-            } else {
-                &self.parent.key_value.0
-            }
-        )
-    }
-}
-
-impl<K, V> Display for Node<K, V>
-where
-    K: Display,
-    V: Display,
-{
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "[{},{},{},{}]",
-            self.flag.color(),
-            self.flag.rela(),
-            self.key_value.0,
-            self.key_value.1
-        )
-    }
-}
-
-impl<K, V> Node<K, V>
-where
-    K: Clone,
-    V: Clone,
-{
-    pub(super) fn init_from(&mut self, source: &Self) {
-        self.key_value = source.key_value.clone();
-        self.flag = source.flag;
-    }
-}
-impl<K, V> Node<K, V> {
-    pub(super) fn new_in<A>(alloc: A) -> NonNull<Self>
-    where
-        A: Allocator,
-    {
-        let layout = Layout::new::<Node<K, V>>();
-        let ptr = match alloc.allocate_zeroed(layout) {
-            Ok(ptr) => ptr,
-            Err(_) => handle_alloc_error(layout),
-        };
-        ptr.cast()
-    }
-    /// make a new node with key and value
-    ///
-    #[inline(always)]
-    pub fn set_parent(&mut self, parent: OwnedNodeRef<K, V>, rela: u8) {
-        self.parent = parent;
-        self.flag.set_rela(rela);
+        unsafe { self.ptr.as_mut() }
     }
 }

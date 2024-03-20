@@ -1,6 +1,5 @@
 use super::map::NdNotFound;
 use super::map::RBTreeMap;
-use super::node::NodeRef;
 use super::node::OwnedNodeRef;
 use crate::alloc::Allocator;
 use core::borrow::Borrow;
@@ -383,12 +382,7 @@ where
     where
         K: Ord,
     {
-        // let node = self
-        //     .tree
-        //     .raw_insert(self.node, self.rela, (self.key, value));
-        // &mut node.into_mut().key_value.1
-
-        let mut node_ref = NodeRef::new_in(
+        let mut node_ref = OwnedNodeRef::new_in(
             #[cfg(debug_assertions)]
             {
                 &self.tree.alloc
@@ -397,9 +391,7 @@ where
             {
                 self.tree.alloc.clone()
             },
-        )
-        .into_owned()
-        .unwrap();
+        );
         unsafe {
             core::ptr::write(&mut node_ref.key_value, (self.key, value));
         }
@@ -411,8 +403,7 @@ where
                 &mut node_ref.into_mut().key_value.1
             }
             NdNotFound::Normal(mut parent, rela) => {
-                parent.next[rela as usize] = node_ref.get_node_ref();
-                node_ref.set_parent(parent.clone(), rela);
+                parent.set_child(node_ref.clone(), rela);
                 self.tree.length += 1;
                 if parent.flag.is_red() {
                     if let Some(new_root) = node_ref.double_red_adjust() {
