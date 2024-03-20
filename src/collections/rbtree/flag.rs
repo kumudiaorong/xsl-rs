@@ -8,17 +8,17 @@ pub struct Flag {
 pub enum Rela {
     LEFT,
     RIGHT,
-    PARENT,
+    ROOT,
 }
 pub const LEFT: u8 = 0b00;
 pub const RIGHT: u8 = 0b01;
-pub const PARENT: u8 = 0b10;
+pub const ROOT: u8 = 0b10;
 impl From<u8> for Rela {
     fn from(flag: u8) -> Self {
         match flag {
             LEFT => Rela::LEFT,
             RIGHT => Rela::RIGHT,
-            PARENT => Rela::PARENT,
+            ROOT => Rela::ROOT,
             _ => unreachable!(),
         }
     }
@@ -38,7 +38,7 @@ impl Display for Rela {
         match self {
             Rela::LEFT => write!(f, "L"),
             Rela::RIGHT => write!(f, "R"),
-            Rela::PARENT => write!(f, "P"),
+            Rela::ROOT => write!(f, "T"),
         }
     }
 }
@@ -46,17 +46,14 @@ impl Display for Rela {
 pub enum Color {
     RED,
     BLACK,
-    ROOT,
 }
 pub const RED: u8 = 0b0000;
 pub const BLACK: u8 = 0b100;
-pub const ROOT: u8 = 0b1000;
 impl Color {
     pub fn as_u8(&self) -> u8 {
         match self {
             Color::RED => RED,
             Color::BLACK => BLACK,
-            Color::ROOT => ROOT,
         }
     }
 }
@@ -65,7 +62,6 @@ impl From<u8> for Color {
         match flag {
             RED => Color::RED,
             BLACK => Color::BLACK,
-            ROOT => Color::ROOT,
             _ => unreachable!(),
         }
     }
@@ -80,22 +76,21 @@ impl Display for Color {
         match self {
             Color::RED => write!(f, "R"),
             Color::BLACK => write!(f, "B"),
-            Color::ROOT => write!(f, "ROOT"),
         }
     }
 }
 impl Flag {
     #[inline(always)]
     pub fn is_red(&self) -> bool {
-        self.flag & 0b1100 == RED
+        self.flag & 0b0100 == RED
     }
     #[inline(always)]
     pub fn is_black(&self) -> bool {
-        self.flag & 0b1100 == BLACK
+        self.flag & 0b0100 == BLACK
     }
     #[inline(always)]
     pub fn is_root(&self) -> bool {
-        self.flag & 0b1100 == ROOT
+        self.flag & 0b10 == ROOT
     }
     #[inline(always)]
     pub fn is_left(&self) -> bool {
@@ -112,22 +107,27 @@ impl Flag {
     }
     #[inline(always)]
     pub fn set_color(&mut self, color: Color) -> &mut Self {
-        self.flag = (self.flag & 0b11110011) | color.as_u8();
+        self.flag = (self.flag & 0b11111011) | color.as_u8();
         self
     }
     #[inline(always)]
     pub fn set_red(&mut self) -> &mut Self {
-        self.flag = (self.flag & 0b11110011) | RED;
+        self.flag = (self.flag & 0b11111011) | RED;
         self
     }
     #[inline(always)]
     pub fn set_black(&mut self) -> &mut Self {
-        self.flag = (self.flag & 0b11110011) | BLACK;
+        self.flag = (self.flag & 0b11111011) | BLACK;
         self
     }
     #[inline(always)]
     pub fn set_root(&mut self) -> &mut Self {
-        self.flag = (self.flag & 0b11110011) | ROOT;
+        self.flag = (self.flag & 0b11111000) | ROOT | BLACK;
+        self
+    }
+    #[inline(always)]
+    pub fn clear_root(&mut self) -> &mut Self {
+        self.flag = self.flag & &!ROOT;
         self
     }
     #[inline(always)]
@@ -136,7 +136,7 @@ impl Flag {
     }
     #[inline(always)]
     pub fn color(&self) -> Color {
-        Color::from(self.flag & 0b1100)
+        Color::from(self.flag & 0b0100)
     }
 }
 

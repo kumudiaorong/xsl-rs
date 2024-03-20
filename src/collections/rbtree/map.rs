@@ -3,13 +3,16 @@ use super::{
     entry::{Entry, OccupiedEntry, VacantEntry},
     flag::Color,
     iter::{Iter, IterMut},
-    node::Node,
-    node::NodeRef,
+    node::{Node, NodeRef, SearchResult},
 };
 use crate::{
     alloc::{Allocator, Global},
-    collections::rbtree::flag::{toggle_rela, LEFT, PARENT, RIGHT},
+    collections::rbtree::{
+        flag::{toggle_rela, LEFT, RIGHT, ROOT},
+        node::OwnedNodeRef,
+    },
 };
+
 use core::{
     alloc::Layout,
     borrow::Borrow,
@@ -18,13 +21,24 @@ use core::{
     ops::Index,
 };
 use values::{Values, ValuesMut};
+
+pub(super) enum NodeDesc<K, V> {
+    Found(OwnedNodeRef<K, V>),
+    NotFound(NdNotFound<K, V>),
+}
+
+pub(super) enum NdNotFound<K, V> {
+    Normal(OwnedNodeRef<K, V>, u8),
+    Root,
+}
+
 pub struct RBTreeMap<K, V, A = Global>
 where
     A: Allocator + Clone,
 {
-    root: NodeRef<K, V>,
-    alloc: A,
-    length: usize,
+    pub(super) root: NodeRef<K, V>,
+    pub(super) alloc: A,
+    pub(super) length: usize,
 }
 impl<K, V, const N: usize> From<[(K, V); N]> for RBTreeMap<K, V>
 where
@@ -66,7 +80,7 @@ where
 
         let mut cur_stack = Vec::new();
         let mut next_stack = Vec::new();
-        cur_stack.push(self.root.next[2].clone());
+        cur_stack.push(self.root.clone());
         while !cur_stack.is_empty() {
             for node in cur_stack.iter() {
                 if node.is_none() {
@@ -166,16 +180,16 @@ where
     fn clone(&self) -> Self {
         fn new_branch<K, V, A>(
             alloc: &A,
-            src: NodeRef<K, V>,
-            mut dst: NodeRef<K, V>,
+            src: OwnedNodeRef<K, V>,
+            mut dst: OwnedNodeRef<K, V>,
             rela: u8,
-        ) -> (NodeRef<K, V>, NodeRef<K, V>)
+        ) -> (OwnedNodeRef<K, V>, OwnedNodeRef<K, V>)
         where
             K: Clone,
             V: Clone,
             A: Allocator,
         {
-            let src_child_ptr = src.next[rela as usize].clone();
+            let src_child_ptr = src.next[rela as usize].clone().into_owned().unwrap();
             let src_child = src_child_ptr.clone();
             let mut new_node = {
                 #[cfg(debug_assertions)]
@@ -186,9 +200,11 @@ where
                 {
                     NodeRef::new_in(alloc.clone())
                 }
-            };
+            }
+            .into_owned()
+            .unwrap();
             new_node.init_from(&*src_child);
-            dst.next[rela as usize] = new_node.clone();
+            dst.next[rela as usize] = new_node.get_node_ref();
             new_node.set_parent(dst, rela as u8);
             (src_child_ptr, new_node)
         }
@@ -200,9 +216,9 @@ where
         let mut stack = Vec::new();
         stack.push(new_branch(
             &new_tree.alloc,
-            self.root.clone(),
-            new_tree.root.clone(),
-            PARENT,
+            self.root.clone().into_owned().unwrap(),
+            new_tree.root.clone().into_owned().unwrap(),
+            ROOT,
         ));
         while let Some((src, dst)) = stack.pop() {
             //First determine whether the child node is empty
@@ -229,7 +245,7 @@ where
 
         let mut cur_stack = Vec::new();
         let mut next_stack = Vec::new();
-        cur_stack.push(self.root.next[2].clone());
+        cur_stack.push(self.root.clone());
         while !cur_stack.is_empty() {
             for node in cur_stack.iter() {
                 if node.is_none() {
@@ -254,10 +270,6 @@ where
 {
     fn drop(&mut self) {
         self.clear();
-        unsafe {
-            self.alloc
-                .deallocate(self.root.unwrap().cast(), Layout::new::<Node<K, V>>());
-        }
     }
 }
 
@@ -283,7 +295,7 @@ where
         }
         use crate::alloc::Vec;
         let mut stack = Vec::new();
-        stack.push(self.root.next[2].clone());
+        stack.push(self.root.clone());
         while !stack.is_empty() {
             let mut node = stack.pop().unwrap();
             if node.is_none() {
@@ -351,11 +363,7 @@ where
     /// assert_eq!(*map.get(&2).unwrap(), "b");
     /// ```
     pub fn first_entry(&mut self) -> Option<OccupiedEntry<'_, K, V, A>> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(OccupiedEntry::new(self.raw_first(), self))
-        }
+        self.raw_first().map(|node| OccupiedEntry::new(node, self))
     }
     /// Returns the first key-value pair in the map.
     /// The key in this pair is the minimum key in the map.
@@ -372,11 +380,7 @@ where
     /// assert_eq!(map.first_key_value(), Some((&1, &"b")));
     /// ```
     pub fn first_key_value(&self) -> Option<(&K, &V)> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(self.raw_first().into_ref_key_value())
-        }
+        self.raw_first().map(|node| node.into_ref_key_value())
     }
     /// Returns the last key-value pair in the map.
     /// The key in this pair is the maximum key in the map.
@@ -392,11 +396,7 @@ where
     /// assert_eq!(map.last_key_value(), Some((&2, &"a")));
     /// ```
     pub fn last_key_value(&self) -> Option<(&K, &V)> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(self.raw_last().into_ref_key_value())
-        }
+        self.raw_last().map(|node| node.into_ref_key_value())
     }
 
     /// Returns the last entry in the map for in-place manipulation.
@@ -419,11 +419,7 @@ where
     /// assert_eq!(*map.get(&2).unwrap(), "last");
     /// ```
     pub fn last_entry(&mut self) -> Option<OccupiedEntry<'_, K, V, A>> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(OccupiedEntry::new(self.raw_last(), self))
-        }
+        self.raw_last().map(|node| OccupiedEntry::new(node, self))
     }
     /// Removes and returns the first element in the map.
     /// The key of this element is the minimum key that was in the map.
@@ -490,7 +486,7 @@ where
         if self.is_empty() {
             Iter::new_empty()
         } else {
-            Iter::new(self.root.next[2].clone(), self.length)
+            Iter::new(self.root.clone().into_owned().unwrap(), self.length)
         }
     }
     /// Gets a mutable iterator over the entries of the map, sorted by key.
@@ -517,7 +513,7 @@ where
         if self.is_empty() {
             IterMut::new_empty()
         } else {
-            IterMut::new(self.root.next[2].clone(), self.length)
+            IterMut::new(self.root.clone().into_owned().unwrap(), self.length)
         }
     }
 }
@@ -550,14 +546,11 @@ where
     /// assert_eq!(map.insert(37, "c"), Some("b"));
     /// assert_eq!(map[&37], "c");
     /// ```
-    pub fn insert(&mut self, key: K, mut value: V) -> Option<V> {
-        match self.raw_search(&key) {
-            (mut node, Ok(())) => {
-                core::mem::swap(&mut node.key_value.1, &mut value);
-                Some(value)
-            }
-            (node, Err(rela)) => {
-                self.raw_insert(node, rela, (key, value));
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        match self.entry(key) {
+            Entry::Occupied(mut e) => Some(e.insert(value)),
+            Entry::Vacant(e) => {
+                e.insert(value);
                 None
             }
         }
@@ -581,10 +574,9 @@ where
     /// assert_eq!(count["c"], 1);
     /// ```
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V, A> {
-        let (node, result) = self.raw_search(&key);
-        match result {
-            Ok(()) => Entry::Occupied(OccupiedEntry::new(node, self)),
-            Err(rela) => Entry::Vacant(VacantEntry::new(key, node, rela, self)),
+        match self.raw_search(&key) {
+            NodeDesc::Found(node) => Entry::Occupied(OccupiedEntry::new(node, self)),
+            NodeDesc::NotFound(nd) => Entry::Vacant(VacantEntry::new(key, nd, self)),
         }
     }
 }
@@ -612,10 +604,9 @@ where
         K: Borrow<Q>,
         Q: ?Sized + Ord,
     {
-        let (node, result) = self.raw_search(key);
-        match result {
-            Ok(()) => Some(&node.into_ref().key_value.1),
-            Err(_) => None,
+        match self.raw_search(key) {
+            NodeDesc::Found(node) => Some(&node.into_ref().key_value.1),
+            NodeDesc::NotFound(_) => None,
         }
     }
     /// Returns a mutable reference to the value corresponding to the key.
@@ -641,10 +632,9 @@ where
         K: Borrow<Q>,
         Q: ?Sized + Ord,
     {
-        let (node, result) = self.raw_search(key);
-        match result {
-            Ok(()) => Some(&mut node.into_mut().key_value.1),
-            Err(_) => None,
+        match self.raw_search(key) {
+            NodeDesc::Found(node) => Some(&mut node.into_mut().key_value.1),
+            NodeDesc::NotFound(_) => None,
         }
     }
 
@@ -690,10 +680,9 @@ where
         K: Borrow<Q>,
         Q: ?Sized + Ord,
     {
-        let (node, result) = self.raw_search(key);
-        match result {
-            Ok(()) => Some(node.into_ref_key_value()),
-            Err(_) => None,
+        match self.raw_search(key) {
+            NodeDesc::Found(node) => Some(node.into_ref_key_value()),
+            NodeDesc::NotFound(_) => None,
         }
     }
 
@@ -718,10 +707,9 @@ where
         K: Borrow<Q>,
         Q: ?Sized + Ord,
     {
-        let (node, result) = self.raw_search(key);
-        match result {
-            Ok(()) => Some(self.raw_remove(node)),
-            Err(_) => None,
+        match self.raw_search(key) {
+            NodeDesc::Found(node) => Some(self.raw_remove(node)),
+            NodeDesc::NotFound(_) => None,
         }
     }
     /// Removes a key from the map, returning the value at the key if the key
@@ -792,12 +780,8 @@ where
     A: Allocator + Clone,
 {
     pub(super) fn new_in(alloc: A) -> Self {
-        let mut root = NodeRef {
-            node: Some(Node::new_in(&alloc)),
-        };
-        root.flag.set_root();
         RBTreeMap {
-            root,
+            root: NodeRef::none(),
             alloc,
             length: 0,
         }
@@ -839,9 +823,9 @@ impl<K, V, A> RBTreeMap<K, V, A>
 where
     A: Allocator + Clone,
 {
-    pub(super) fn raw_remove(&mut self, node: NodeRef<K, V>) -> (K, V) {
+    pub(super) fn raw_remove(&mut self, node: OwnedNodeRef<K, V>) -> (K, V) {
         let kv = unsafe { core::mem::transmute_copy(&node.key_value) };
-        fn replace<K, V>(mut node: NodeRef<K, V>) -> NodeRef<K, V> {
+        fn replace<K, V>(mut node: OwnedNodeRef<K, V>) -> OwnedNodeRef<K, V> {
             if node.next[1].is_none() {
                 if node.next[0].is_none() {
                     return node;
@@ -849,114 +833,178 @@ where
                 unsafe {
                     core::ptr::copy_nonoverlapping(&node.next[0].key_value, &mut node.key_value, 1);
                 }
-                return node.into_ref().next[0].clone();
+                return node.next[0].clone().into_owned().unwrap();
             }
-            let repl_node = node.next[1].min();
+            let repl_node = unsafe { node.next[1].clone().into_owned().unwrap().min() };
             unsafe {
                 core::ptr::copy_nonoverlapping(&repl_node.key_value, &mut node.key_value, 1);
             }
             return replace(repl_node);
         }
         let repl_node = replace(node);
-        let mut parent_ptr = repl_node.next[2].clone();
+        let mut parent_ptr = repl_node.parent.clone();
         let rela = repl_node.flag.rela();
         let color = repl_node.flag.color();
-        parent_ptr.next[rela] = NodeRef::none();
         self.length -= 1;
         unsafe {
             self.alloc
                 .deallocate(repl_node.unwrap().cast(), Layout::new::<Node<K, V>>());
         }
-        if color == Color::RED || rela == PARENT as usize {
+        if color == Color::RED {
+            parent_ptr.next[rela] = NodeRef::none();
             return kv;
         }
-        let mut brother_ptr = parent_ptr.next[toggle_rela(rela)].clone();
+        if rela == ROOT as usize {
+            self.root = NodeRef::none();
+            return kv;
+        }
+        parent_ptr.next[rela] = NodeRef::none();
+        let mut brother_ptr = parent_ptr.next[toggle_rela(rela)]
+            .clone()
+            .into_owned()
+            .unwrap();
         if brother_ptr.flag.is_red() {
-            brother_ptr.single_rotate();
-            let mut nephew_ptr = parent_ptr.next[toggle_rela(rela)].clone();
-            let mut gnephew_ptr = nephew_ptr.next[rela].clone();
-            if gnephew_ptr.is_none() {
-                nephew_ptr.single_rotate();
-                parent_ptr.flag.set_red();
+            if parent_ptr.flag.is_root() {
+                brother_ptr.flag.set_root();
+                self.root = brother_ptr.get_node_ref();
             } else {
-                gnephew_ptr.single_rotate();
-                gnephew_ptr.single_rotate();
+                let mut gparent = parent_ptr.parent.clone();
+                let prela = parent_ptr.flag.rela();
+                gparent.next[prela] = brother_ptr.get_node_ref();
+                brother_ptr.set_parent(gparent, prela as u8);
+                brother_ptr.flag.set_black();
             }
-            brother_ptr.flag.set_black();
+            parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
+            let mut nephew = brother_ptr.next[rela].clone().into_owned().unwrap();
+            let left_gnephew = nephew.next[rela].clone();
+            let right_gnephew = nephew.next[toggle_rela(rela)].clone();
+            match (left_gnephew.into_owned(), right_gnephew.into_owned()) {
+                (None, _) => {
+                    nephew.next[rela] = parent_ptr.get_node_ref();
+                    parent_ptr.set_parent(nephew, rela as u8);
+                    parent_ptr.flag.set_red();
+                }
+                (Some(mut lgnephew), Some(mut rgnephew)) => {
+                    nephew.flag.set_red();
+                    lgnephew.flag.set_black();
+                    rgnephew.flag.set_black();
+                    lgnephew.next[rela] = parent_ptr.get_node_ref();
+                    parent_ptr.set_parent(lgnephew, rela as u8);
+                    parent_ptr.flag.set_red();
+                }
+                (Some(mut lgnephew), None) => {
+                    brother_ptr.next[rela] = lgnephew.get_node_ref();
+                    lgnephew.set_parent(brother_ptr, rela as u8);
+                    lgnephew.next[toggle_rela(rela)] = nephew.get_node_ref();
+                    lgnephew.next[rela] = parent_ptr.get_node_ref();
+                    nephew.set_parent(lgnephew.clone(), toggle_rela(rela) as u8);
+                    parent_ptr.set_parent(lgnephew, rela as u8);
+                    parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
+                    nephew.next[rela] = NodeRef::none();
+                }
+            };
         } else {
-            let mut nephew = brother_ptr.next[rela].clone();
-            if nephew.is_none() {
-                if parent_ptr.flag.is_red() {
-                    brother_ptr.single_rotate();
-                } else {
-                    nephew = brother_ptr.next[toggle_rela(rela)].clone();
-                    if nephew.is_none() {
-                        brother_ptr.flag.set_red();
-                        if parent_ptr.flag.rela() != PARENT as usize {
-                            let rela = parent_ptr.flag.rela();
-                            parent_ptr.next[2].rasie(rela);
+            let left_nephew = brother_ptr.next[rela].clone().into_owned();
+            let right_nephew = brother_ptr.next[toggle_rela(rela)].clone().into_owned();
+            match (left_nephew, right_nephew) {
+                (None, None) => {
+                    brother_ptr.flag.set_red();
+                    if !parent_ptr.flag.is_root() {
+                        if parent_ptr.flag.is_black() {
+                            let prela = parent_ptr.flag.rela();
+                            if let Some(new_root) = parent_ptr.parent.rasie(prela) {
+                                self.root = new_root.get_node_ref();
+                            }
+                        } else {
+                            parent_ptr.flag.set_black();
                         }
-                    } else {
-                        brother_ptr.single_rotate();
-                        nephew.flag.set_black();
                     }
                 }
-            } else {
-                nephew.single_rotate();
-                nephew.single_rotate();
-                nephew.flag.set_color(parent_ptr.flag.color());
-                parent_ptr.flag.set_black();
+                (None, Some(mut rnephew)) => {
+                    if parent_ptr.flag.is_root() {
+                        brother_ptr.flag.set_root();
+                        self.root = brother_ptr.get_node_ref();
+                    } else {
+                        let mut gparent = parent_ptr.parent.clone();
+                        let prela = parent_ptr.flag.rela();
+                        gparent.next[prela] = brother_ptr.get_node_ref();
+                        brother_ptr.set_parent(gparent, prela as u8);
+                    }
+                    brother_ptr.next[rela] = parent_ptr.get_node_ref();
+                    parent_ptr.set_parent(brother_ptr, rela as u8);
+                    parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
+                    rnephew.flag.set_color(parent_ptr.flag.color());
+                }
+                (Some(mut lnephew), Some(mut rnephew)) => {
+                    if parent_ptr.flag.is_root() {
+                        brother_ptr.flag.set_root();
+                        self.root = brother_ptr.get_node_ref();
+                    } else {
+                        let mut gparent = parent_ptr.parent.clone();
+                        let prela = parent_ptr.flag.rela();
+                        gparent.next[prela] = brother_ptr.get_node_ref();
+                        brother_ptr.set_parent(gparent, prela as u8);
+                    }
+                    lnephew.next[rela] = parent_ptr.get_node_ref();
+                    parent_ptr.set_parent(lnephew.clone(), rela as u8);
+                    brother_ptr.flag.set_color(parent_ptr.flag.color());
+                    parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
+                    lnephew.flag.set_black();
+                    rnephew.flag.set_black();
+                    parent_ptr.flag.set_red();
+                }
+                (Some(mut lnephew), None) => {
+                    if parent_ptr.flag.is_root() {
+                        lnephew.flag.set_root();
+                        self.root = lnephew.get_node_ref();
+                    } else {
+                        let mut gparent = parent_ptr.parent.clone();
+                        let prela = parent_ptr.flag.rela();
+                        gparent.next[prela] = lnephew.get_node_ref();
+                        lnephew.set_parent(gparent, prela as u8);
+                    }
+                    lnephew.next[toggle_rela(rela)] = brother_ptr.get_node_ref();
+                    brother_ptr.set_parent(lnephew.clone(), toggle_rela(rela) as u8);
+                    lnephew.next[rela] = parent_ptr.get_node_ref();
+                    parent_ptr.set_parent(lnephew.clone(), rela as u8);
+                    parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
+                    brother_ptr.next[rela] = NodeRef::none();
+                    if parent_ptr.flag.is_black() {
+                        lnephew.flag.set_black();
+                    } else {
+                        parent_ptr.flag.set_black();
+                    }
+                }
             }
         }
         kv
     }
-    pub(super) fn raw_search<Q>(&self, key: &Q) -> (NodeRef<K, V>, Result<(), u8>)
+    pub(super) fn raw_search<Q>(&self, key: &Q) -> NodeDesc<K, V>
     where
         K: Borrow<Q>,
         Q: ?Sized + Ord,
     {
         if self.len() == 0 {
-            return (self.root.clone(), Err(PARENT));
+            return NodeDesc::NotFound(NdNotFound::Root);
         }
-        self.root.next[2].search(key)
-    }
-    pub(super) fn raw_insert(
-        &mut self,
-        mut parent: NodeRef<K, V>,
-        rela: u8,
-        kv: (K, V),
-    ) -> NodeRef<K, V> {
-        let mut node_ref = NodeRef::new_in(
-            #[cfg(debug_assertions)]
-            {
-                &self.alloc
-            },
-            #[cfg(not(debug_assertions))]
-            {
-                self.alloc.clone()
-            },
-        );
-        parent.next[rela as usize] = node_ref.clone();
-        let node = &mut *node_ref;
-        unsafe {
-            core::ptr::write(&mut node.key_value, kv);
-        }
-        node.set_parent(parent.clone(), rela);
-        self.length += 1;
-        if self.len() == 1 {
-            node.flag.set_black();
-        } else {
-            if parent.flag.is_red() {
-                node_ref.double_red_adjust();
+        match self.root.clone().into_owned().unwrap().search(key) {
+            SearchResult::Found(node) => NodeDesc::Found(node),
+            SearchResult::NotFound(node, rela) => {
+                NodeDesc::NotFound(NdNotFound::Normal(node, rela))
             }
         }
-        node_ref
     }
-    pub(super) fn raw_first(&self) -> NodeRef<K, V> {
-        self.root.next[2].min()
+    pub fn raw_first(&self) -> Option<OwnedNodeRef<K, V>> {
+        if self.is_empty() {
+            return None;
+        }
+        Some(unsafe { self.root.clone().into_owned().unwrap().min() })
     }
-    pub(super) fn raw_last(&self) -> NodeRef<K, V> {
-        self.root.next[2].max()
+    pub fn raw_last(&self) -> Option<OwnedNodeRef<K, V>> {
+        if self.is_empty() {
+            return None;
+        }
+        Some(unsafe { self.root.clone().into_owned().unwrap().max() })
     }
 }
 mod tests;

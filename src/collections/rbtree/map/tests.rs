@@ -8,12 +8,12 @@ where
         if self.is_empty() {
             return;
         }
-        assert!(self.root.next[2].flag.is_black(), "root is not black");
+        assert!(self.root.flag.is_black(), "root is not black");
         use crate::alloc::Vec;
         let mut max_height = 0;
         let mut stack = Vec::new();
         let mut end_flag = false;
-        stack.push((self.root.next[2].clone(), 0));
+        stack.push((self.root.clone(), 0));
         while let Some((node, mut height)) = stack.pop() {
             if node.is_none() {
                 if end_flag {

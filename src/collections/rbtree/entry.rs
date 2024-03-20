@@ -1,5 +1,7 @@
+use super::map::NdNotFound;
 use super::map::RBTreeMap;
 use super::node::NodeRef;
+use super::node::OwnedNodeRef;
 use crate::alloc::Allocator;
 use core::borrow::Borrow;
 pub enum Entry<'a, K, V, A>
@@ -155,7 +157,7 @@ pub struct OccupiedEntry<'a, K, V, A>
 where
     A: Allocator + Clone,
 {
-    node: NodeRef<K, V>,
+    node: OwnedNodeRef<K, V>,
     tree: &'a mut RBTreeMap<K, V, A>,
 }
 impl<'a, K, V, A> OccupiedEntry<'a, K, V, A>
@@ -163,7 +165,7 @@ where
     A: Allocator + Clone,
 {
     #[inline]
-    pub(super) fn new(node: NodeRef<K, V>, tree: &'a mut RBTreeMap<K, V, A>) -> Self {
+    pub(super) fn new(node: OwnedNodeRef<K, V>, tree: &'a mut RBTreeMap<K, V, A>) -> Self {
         OccupiedEntry { node, tree }
     }
     /// Gets a reference to the key in the entry.
@@ -326,8 +328,7 @@ where
     A: Allocator + Clone,
 {
     key: K,
-    node: NodeRef<K, V>,
-    rela: u8,
+    nd: NdNotFound<K, V>,
     tree: &'a mut RBTreeMap<K, V, A>,
 }
 
@@ -335,18 +336,8 @@ impl<'a, K, V, A> VacantEntry<'a, K, V, A>
 where
     A: Allocator + Clone,
 {
-    pub(super) fn new(
-        key: K,
-        node: NodeRef<K, V>,
-        rela: u8,
-        tree: &'a mut RBTreeMap<K, V, A>,
-    ) -> Self {
-        VacantEntry {
-            key,
-            node,
-            rela,
-            tree,
-        }
+    pub(super) fn new(key: K, nd: NdNotFound<K, V>, tree: &'a mut RBTreeMap<K, V, A>) -> Self {
+        VacantEntry { key, nd, tree }
     }
 }
 impl<'a, K, V, A> VacantEntry<'a, K, V, A>
@@ -392,9 +383,44 @@ where
     where
         K: Ord,
     {
-        let node = self
-            .tree
-            .raw_insert(self.node, self.rela, (self.key, value));
-        &mut node.into_mut().key_value.1
+        // let node = self
+        //     .tree
+        //     .raw_insert(self.node, self.rela, (self.key, value));
+        // &mut node.into_mut().key_value.1
+
+        let mut node_ref = NodeRef::new_in(
+            #[cfg(debug_assertions)]
+            {
+                &self.tree.alloc
+            },
+            #[cfg(not(debug_assertions))]
+            {
+                self.tree.alloc.clone()
+            },
+        )
+        .into_owned()
+        .unwrap();
+        unsafe {
+            core::ptr::write(&mut node_ref.key_value, (self.key, value));
+        }
+        match self.nd {
+            NdNotFound::Root => {
+                self.tree.root = node_ref.get_node_ref();
+                self.tree.length += 1;
+                node_ref.flag.set_root();
+                &mut node_ref.into_mut().key_value.1
+            }
+            NdNotFound::Normal(mut parent, rela) => {
+                parent.next[rela as usize] = node_ref.get_node_ref();
+                node_ref.set_parent(parent.clone(), rela);
+                self.tree.length += 1;
+                if parent.flag.is_red() {
+                    if let Some(new_root) = node_ref.double_red_adjust() {
+                        self.tree.root = new_root.get_node_ref();
+                    }
+                }
+                &mut node_ref.into_mut().key_value.1
+            }
+        }
     }
 }

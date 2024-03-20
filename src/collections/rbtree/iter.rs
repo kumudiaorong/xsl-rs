@@ -1,17 +1,20 @@
-use super::node::NodeRef;
+use super::node::OwnedNodeRef;
 use core::{
     iter::{FusedIterator, Iterator},
     marker::PhantomData,
 };
+
 enum LazyPoint<K, V> {
-    Ready(NodeRef<K, V>),
-    Moving(NodeRef<K, V>),
+    Ready(OwnedNodeRef<K, V>),
+    Moving(OwnedNodeRef<K, V>),
+    Empty,
 }
 impl<K, V> Clone for LazyPoint<K, V> {
     fn clone(&self) -> Self {
         match self {
             LazyPoint::Ready(ptr) => LazyPoint::Ready(ptr.clone()),
             LazyPoint::Moving(ptr) => LazyPoint::Moving(ptr.clone()),
+            LazyPoint::Empty => LazyPoint::Empty,
         }
     }
 }
@@ -33,7 +36,7 @@ impl<'a, K, V> Clone for Iter<'a, K, V> {
 }
 
 impl<'a, K, V> Iter<'a, K, V> {
-    pub(super) fn new(root: NodeRef<K, V>, length: usize) -> Self {
+    pub(super) fn new(root: OwnedNodeRef<K, V>, length: usize) -> Self {
         Self {
             range: (
                 LazyPoint::Ready(root.clone()),
@@ -45,10 +48,7 @@ impl<'a, K, V> Iter<'a, K, V> {
     }
     pub(super) fn new_empty() -> Self {
         Self {
-            range: (
-                LazyPoint::Ready(NodeRef::none()),
-                LazyPoint::Ready(NodeRef::none()),
-            ),
+            range: (LazyPoint::Empty, LazyPoint::Empty),
             length: 0,
             _marker: PhantomData,
         }
@@ -62,8 +62,9 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
             return None;
         }
         let new_begin = match self.range.0.clone() {
-            LazyPoint::Ready(root) => root.min(),
-            LazyPoint::Moving(begin) => begin.next_unchecked(),
+            LazyPoint::Empty => return None,
+            LazyPoint::Ready(root) => unsafe { root.min() },
+            LazyPoint::Moving(begin) => unsafe { begin.next_unchecked() },
         };
         self.range.0 = LazyPoint::Moving(new_begin.clone());
         self.length -= 1;
@@ -80,8 +81,9 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
         Some(
             {
                 match self.range.1 {
-                    LazyPoint::Ready(root) => root.max(),
-                    LazyPoint::Moving(end) => end.next_back_unchecked(),
+                    LazyPoint::Empty => return None,
+                    LazyPoint::Ready(root) => unsafe { root.max() },
+                    LazyPoint::Moving(end) => unsafe { end.next_back_unchecked() },
                 }
             }
             .into_ref_key_value(),
@@ -97,8 +99,9 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
         Some(
             {
                 match self.range.0 {
-                    LazyPoint::Ready(root) => root.min(),
-                    LazyPoint::Moving(begin) => begin.next_unchecked(),
+                    LazyPoint::Empty => return None,
+                    LazyPoint::Ready(root) => unsafe { root.min() },
+                    LazyPoint::Moving(begin) => unsafe { begin.next_unchecked() },
                 }
             }
             .into_ref_key_value(),
@@ -119,8 +122,9 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for Iter<'a, K, V> {
             return None;
         }
         let new_end = match self.range.1.clone() {
-            LazyPoint::Ready(root) => root.max(),
-            LazyPoint::Moving(end) => end.next_back_unchecked(),
+            LazyPoint::Empty => return None,
+            LazyPoint::Ready(root) => unsafe { root.max() },
+            LazyPoint::Moving(end) => unsafe { end.next_back_unchecked() },
         };
         self.range.1 = LazyPoint::Moving(new_end.clone());
         self.length -= 1;
@@ -140,7 +144,7 @@ pub struct IterMut<'a, K: 'a, V: 'a> {
 }
 
 impl<'a, K, V> IterMut<'a, K, V> {
-    pub(super) fn new(root: NodeRef<K, V>, length: usize) -> Self {
+    pub(super) fn new(root: OwnedNodeRef<K, V>, length: usize) -> Self {
         Self {
             range: (
                 LazyPoint::Ready(root.clone()),
@@ -152,10 +156,7 @@ impl<'a, K, V> IterMut<'a, K, V> {
     }
     pub(super) fn new_empty() -> Self {
         Self {
-            range: (
-                LazyPoint::Ready(NodeRef::none()),
-                LazyPoint::Ready(NodeRef::none()),
-            ),
+            range: (LazyPoint::Empty, LazyPoint::Empty),
             length: 0,
             _marker: PhantomData,
         }
@@ -176,8 +177,9 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
             return None;
         }
         let new_begin = match self.range.0.clone() {
-            LazyPoint::Ready(root) => root.min(),
-            LazyPoint::Moving(begin) => begin.next_unchecked(),
+            LazyPoint::Empty => return None,
+            LazyPoint::Ready(root) => unsafe { root.min() },
+            LazyPoint::Moving(begin) => unsafe { begin.next_unchecked() },
         };
         self.range.0 = LazyPoint::Moving(new_begin.clone());
         self.length -= 1;
@@ -192,8 +194,9 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
             return None;
         }
         let kv = &mut match self.range.1 {
-            LazyPoint::Ready(root) => root.max(),
-            LazyPoint::Moving(end) => end.next_back_unchecked(),
+            LazyPoint::Empty => return None,
+            LazyPoint::Ready(root) => unsafe { root.max() },
+            LazyPoint::Moving(end) => unsafe { end.next_back_unchecked() },
         }
         .into_mut()
         .key_value;
@@ -207,8 +210,9 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
             return None;
         }
         let kv = &mut match self.range.0 {
-            LazyPoint::Ready(root) => root.min(),
-            LazyPoint::Moving(begin) => begin.next_unchecked(),
+            LazyPoint::Empty => return None,
+            LazyPoint::Ready(root) => unsafe { root.min() },
+            LazyPoint::Moving(begin) => unsafe { begin.next_unchecked() },
         }
         .into_mut()
         .key_value;
@@ -227,8 +231,9 @@ impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V> {
             return None;
         }
         let new_end = match self.range.1.clone() {
-            LazyPoint::Ready(root) => root.max(),
-            LazyPoint::Moving(end) => end.next_back_unchecked(),
+            LazyPoint::Empty => return None,
+            LazyPoint::Ready(root) => unsafe { root.max() },
+            LazyPoint::Moving(end) => unsafe { end.next_back_unchecked() },
         };
         self.range.1 = LazyPoint::Moving(new_end.clone());
         self.length -= 1;
