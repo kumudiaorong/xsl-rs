@@ -63,3 +63,15 @@ fn rbtree_timing() {
     let duration = common::timing(test_remove);
     println!("rbtree remove: {:?}", duration);
 }
+
+#[test]
+fn fuzzy_finder() {
+    let mut finder = xsl::collections::FuzzyFinder::default();
+    finder.insert("hello".to_string(), 1);
+    assert_eq!(finder.search("hello".to_string()), Some(vec![&1]));
+    assert_eq!(finder.search("world".to_string()), None);
+    finder.insert("ello".to_string(), 2);
+    assert_eq!(finder.search_prefix("he".to_string()), Some(vec![&1]));
+    assert_eq!(finder.search_prefix("e".to_string()), Some(vec![&2, &1]));
+    assert_eq!(finder.search_prefix("w".to_string()), None);
+}
