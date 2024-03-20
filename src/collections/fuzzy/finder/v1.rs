@@ -1,8 +1,8 @@
 extern crate alloc;
+extern crate std;
 use alloc::string::String;
 use alloc::vec::Vec;
-extern crate std;
-use crate::collections::RBTreeMap;
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 #[derive(Debug)]
 pub struct Finder<T> {
@@ -24,14 +24,14 @@ impl<T> Extend<(String, T)> for Finder<T> {
 }
 #[derive(Debug)]
 struct Node<T> {
-    children: RBTreeMap<char, Node<T>>,
+    children: BTreeMap<char, Node<T>>,
     values: Vec<T>,
 }
 impl<T> Finder<T> {
     pub fn new(miss_count: usize, ignore_case: bool) -> Self {
         Self {
             root: Node {
-                children: RBTreeMap::new(),
+                children: BTreeMap::new(),
                 values: Vec::new(),
             },
             miss_count,
@@ -46,7 +46,7 @@ impl<T> Finder<T> {
         }
         for c in word.chars() {
             node = node.children.entry(c).or_insert(Node {
-                children: RBTreeMap::new(),
+                children: BTreeMap::new(),
                 values: Vec::new(),
             });
         }

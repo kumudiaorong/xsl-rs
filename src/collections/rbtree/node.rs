@@ -165,7 +165,7 @@ impl<K, V> OwnedNodeRef<K, V> {
         A: Allocator,
     {
         Self {
-            ptr: Some(Node::new_in(alloc)),
+            ptr: Node::new_in(alloc),
         }
     }
     pub fn get_node_ref(&self) -> NodeRef<K, V> {
