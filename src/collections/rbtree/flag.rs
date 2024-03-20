@@ -131,8 +131,8 @@ impl Flag {
         self
     }
     #[inline(always)]
-    pub fn rela(&self) -> usize {
-        (self.flag & 0b11) as usize
+    pub fn rela(&self) -> u8 {
+        self.flag & 0b11
     }
     #[inline(always)]
     pub fn color(&self) -> Color {
@@ -140,7 +140,7 @@ impl Flag {
     }
 }
 
-pub fn toggle_rela(rela: usize) -> usize {
+pub fn toggle_rela(rela: u8) -> u8 {
     match rela {
         0 => 1,
         1 => 0,
