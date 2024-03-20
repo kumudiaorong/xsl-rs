@@ -209,49 +209,41 @@ impl<K, V> OwnedNodeRef<K, V> {
     }
     pub fn rest_double_red_adjust(&mut self) -> Option<OwnedNodeRef<K, V>> {
         let mut new_root = None;
-        let mut child_node = self.clone();
-        let mut parent_node = child_node.parent.clone();
-        let mut gparent = parent_node.parent.clone();
-        let prela = parent_node.flag.rela();
+        let mut child = self.clone();
+        let mut parent = child.parent.clone();
+        let mut gparent = parent.parent.clone();
+        let prela = parent.flag.rela();
         let mut uncle = gparent.next[toggle_rela(prela)].clone();
         gparent.flag.set_red();
 
         if uncle.flag.is_black() {
             let grela = gparent.flag.rela();
-            let crela = child_node.flag.rela();
-            if child_node.flag.rela() != prela {
+            let crela = child.flag.rela();
+            if child.flag.rela() != prela {
                 if gparent.flag.is_root() {
-                    child_node.flag.set_root();
-                    new_root = Some(child_node.clone());
+                    child.flag.set_root();
+                    new_root = Some(child.clone());
                 } else {
-                    let mut next_parent = gparent.parent.clone();
-                    next_parent.next[grela] = child_node.get_node_ref();
-                    child_node.set_parent(next_parent, grela as u8);
+                    gparent.parent.set_child(child.clone(), grela as u8);
                 }
-                let mut lgchild = child_node.next[crela].clone();
-                let mut rgchild = child_node.next[prela].clone();
-                gparent.set_parent(child_node.clone(), crela as u8);
-                gparent.next[prela] = lgchild.clone();
-                lgchild.set_parent(gparent.clone(), prela as u8);
-                child_node.next[crela] = gparent.get_node_ref();
-                child_node.next[prela] = parent_node.get_node_ref();
-                rgchild.set_parent(parent_node.clone(), crela as u8);
-                parent_node.set_parent(child_node.clone(), prela as u8);
-                parent_node.next[crela] = rgchild;
-                parent_node = child_node;
+                gparent.set_child(child.next[crela].clone().into_owned().unwrap(), prela as u8);
+                parent.set_child(child.next[prela].clone().into_owned().unwrap(), crela as u8);
+                child.set_child(gparent.clone(), crela as u8);
+                child.set_child(parent.clone(), prela as u8);
+                parent = child;
             } else {
                 if gparent.flag.is_root() {
-                    parent_node.flag.set_root();
-                    new_root = Some(parent_node.clone());
+                    parent.flag.set_root();
+                    new_root = Some(parent.clone());
                 } else {
-                    gparent.parent.set_child(parent_node.clone(), grela as u8);
+                    gparent.parent.set_child(parent.clone(), grela as u8);
                 }
                 let toggle_grela = toggle_rela(crela);
                 gparent.set_child(
-                    parent_node.next[toggle_grela].clone().into_owned().unwrap(),
+                    parent.next[toggle_grela].clone().into_owned().unwrap(),
                     crela as u8,
                 );
-                parent_node.set_child(gparent, toggle_grela as u8);
+                parent.set_child(gparent, toggle_grela as u8);
             }
         } else {
             uncle.flag.set_black();
@@ -263,41 +255,41 @@ impl<K, V> OwnedNodeRef<K, V> {
                 }
             }
         }
-        parent_node.flag.set_black();
+        parent.flag.set_black();
         new_root
     }
     pub fn double_red_adjust(&mut self) -> Option<OwnedNodeRef<K, V>> {
         let mut new_root = None;
-        let mut child_node: OwnedNodeRef<K, V> = self.clone();
-        let mut parent_node = child_node.parent.clone();
-        let mut gparent = parent_node.parent.clone();
-        let prela = parent_node.flag.rela();
+        let mut child: OwnedNodeRef<K, V> = self.clone();
+        let mut parent = child.parent.clone();
+        let mut gparent = parent.parent.clone();
+        let prela = parent.flag.rela();
         let mut uncle = gparent.next[toggle_rela(prela)].clone();
         gparent.flag.set_red();
         if uncle.is_none() {
-            let crela = child_node.flag.rela();
+            let crela = child.flag.rela();
             let grela = gparent.flag.rela();
             if crela != prela {
                 if gparent.flag.is_root() {
-                    child_node.flag.set_root();
-                    new_root = Some(child_node.clone());
+                    child.flag.set_root();
+                    new_root = Some(child.clone());
                 } else {
-                    gparent.parent.set_child(child_node.clone(), grela as u8);
+                    gparent.parent.set_child(child.clone(), grela as u8);
                 }
-                child_node.set_child(parent_node.clone(), prela as u8);
-                child_node.set_child(gparent.clone(), crela as u8);
-                parent_node.next[crela] = NodeRef::none();
+                child.set_child(parent.clone(), prela as u8);
+                child.set_child(gparent.clone(), crela as u8);
+                parent.next[crela] = NodeRef::none();
                 gparent.next[prela] = NodeRef::none();
-                parent_node = child_node;
+                parent = child;
             } else {
                 if gparent.flag.is_root() {
-                    parent_node.flag.set_root();
-                    new_root = Some(parent_node.clone());
+                    parent.flag.set_root();
+                    new_root = Some(parent.clone());
                 } else {
-                    gparent.parent.set_child(parent_node.clone(), grela as u8);
+                    gparent.parent.set_child(parent.clone(), grela as u8);
                 }
                 gparent.next[crela] = NodeRef::none();
-                parent_node.set_child(gparent, toggle_rela(crela) as u8);
+                parent.set_child(gparent, toggle_rela(crela) as u8);
             }
         } else {
             uncle.flag.set_black();
@@ -309,63 +301,54 @@ impl<K, V> OwnedNodeRef<K, V> {
                 }
             }
         }
-        parent_node.flag.set_black();
+        parent.flag.set_black();
         new_root
     }
     pub(super) fn rasie(&mut self, rela: usize) -> Option<OwnedNodeRef<K, V>> {
         let mut new_root = None;
-        let parent = self;
+        let mut parent = self.clone();
         let mut brother = parent.next[toggle_rela(rela)].clone().into_owned().unwrap();
+        let prela = parent.flag.rela();
         if brother.flag.is_black() {
-            let mut right_nephew = brother.next[toggle_rela(rela)]
+            let mut rnephew = brother.next[toggle_rela(rela)]
                 .clone()
                 .into_owned()
                 .unwrap();
-            let mut left_nephew = brother.next[rela].clone().into_owned().unwrap();
-            if right_nephew.flag.is_red() {
+            let mut lnephew = brother.next[rela].clone().into_owned().unwrap();
+            if rnephew.flag.is_red() {
                 if parent.flag.is_root() {
-                    parent.flag.clear_root();
                     brother.flag.set_root();
                     new_root = Some(brother.clone());
                 } else {
-                    let prela = parent.flag.rela();
-                    let mut next_parent = parent.parent.clone();
-                    next_parent.next[prela] = brother.get_node_ref();
-                    brother.set_parent(next_parent, prela as u8);
+                    parent.parent.set_child(brother.clone(), prela as u8);
                 }
-                brother.next[rela] = parent.get_node_ref();
                 brother.flag.set_color(parent.flag.color());
-                left_nephew.set_parent(parent.clone(), toggle_rela(rela) as u8);
-                parent.set_parent(brother.clone(), rela as u8);
-                parent.next[toggle_rela(rela)] = left_nephew.get_node_ref();
                 parent.flag.set_black();
-                right_nephew.flag.set_black();
-            } else if left_nephew.flag.is_red() {
+                rnephew.flag.set_black();
+                parent.set_child(lnephew, toggle_rela(rela) as u8);
+                brother.set_child(parent, rela as u8);
+            } else if lnephew.flag.is_red() {
                 if parent.flag.is_root() {
-                    parent.flag.clear_root();
-                    left_nephew.flag.set_root();
-                    new_root = Some(left_nephew.clone());
+                    lnephew.flag.set_root();
+                    new_root = Some(lnephew.clone());
                 } else {
-                    let prela = parent.flag.rela();
-                    let mut next_parent = parent.parent.clone();
-                    next_parent.next[prela] = left_nephew.get_node_ref();
-                    left_nephew.set_parent(next_parent, prela as u8);
+                    parent.parent.set_child(lnephew.clone(), prela as u8);
                 }
-                let mut rgnephew = left_nephew.next[toggle_rela(rela)]
-                    .clone()
-                    .into_owned()
-                    .unwrap();
-                brother.set_parent(left_nephew.clone(), toggle_rela(rela) as u8);
-                brother.next[rela] = rgnephew.get_node_ref();
-                rgnephew.set_parent(brother.clone(), rela as u8);
-                left_nephew.next[toggle_rela(rela)] = brother.get_node_ref();
-                let mut lgnephew = left_nephew.next[rela].clone().into_owned().unwrap();
-                left_nephew.next[rela] = parent.get_node_ref();
-                lgnephew.set_parent(parent.clone(), toggle_rela(rela) as u8);
-                parent.set_parent(left_nephew.clone(), rela as u8);
-                parent.next[toggle_rela(rela)] = lgnephew.get_node_ref();
-                left_nephew.flag.set_color(parent.flag.color());
+                lnephew.flag.set_color(parent.flag.color());
                 parent.flag.set_black();
+                parent.set_child(
+                    lnephew.next[rela].clone().into_owned().unwrap(),
+                    toggle_rela(rela) as u8,
+                );
+                brother.set_child(
+                    lnephew.next[toggle_rela(rela)]
+                        .clone()
+                        .into_owned()
+                        .unwrap(),
+                    rela as u8,
+                );
+                lnephew.set_child(parent, rela as u8);
+                lnephew.set_child(brother, toggle_rela(rela) as u8);
             } else {
                 brother.flag.set_red();
                 if parent.flag.is_red() {
@@ -379,22 +362,19 @@ impl<K, V> OwnedNodeRef<K, V> {
             }
         } else {
             if parent.flag.is_root() {
-                parent.flag.clear_root();
                 brother.flag.set_root();
                 new_root = Some(brother.clone());
             } else {
-                let prela = parent.flag.rela();
-                let mut next_parent = parent.parent.clone();
-                next_parent.next[prela] = brother.get_node_ref();
-                brother.set_parent(next_parent, prela as u8);
                 brother.flag.set_black();
+                parent.parent.set_child(brother.clone(), prela as u8);
             }
-            let mut nephew = brother.next[rela].clone().into_owned().unwrap();
-            parent.next[toggle_rela(rela)] = nephew.get_node_ref();
-            parent.set_parent(brother.clone(), rela as u8);
-            brother.next[rela] = parent.get_node_ref();
-            nephew.set_parent(parent.clone(), toggle_rela(rela) as u8);
             parent.flag.set_red();
+            parent.set_child(
+                brother.next[rela].clone().into_owned().unwrap(),
+                toggle_rela(rela) as u8,
+            );
+            brother.set_child(parent.clone(), rela as u8);
+
             if let Some(nr) = parent.rasie(rela) {
                 new_root = Some(nr);
             }
@@ -490,58 +470,4 @@ impl<K, V> Node<K, V> {
         self.parent = parent;
         self.flag.set_rela(rela);
     }
-    // pub fn single_rotate(&mut self) {
-    //     let mut parent = self.parent.clone();
-    //     let mut child = NodeRef {
-    //         node: NonNull::new(self as *const _ as *mut _),
-    //     };
-    //     let crela = child.flag.rela();
-    //     let mut gchild = child.next[toggle_rela(crela)].clone();
-    //     if gchild.is_some() {
-    //         gchild.set_parent(parent.clone(), crela as u8);
-    //     }
-
-    //     parent.next[crela] = gchild;
-    //     let prela = parent.flag.rela();
-    //     let mut gparent = parent.parent.clone();
-
-    //     gparent.next[prela] = child.clone();
-    //     parent.set_parent(child.clone(), toggle_rela(crela) as u8);
-    //     child.next[toggle_rela(crela)] = parent;
-    //     child.set_parent(gparent, prela as u8);
-    // }
-    // pub(super) fn rasie(&mut self, rela: usize) {
-    //     let parent = self;
-    //     let brother_ptr = parent.next[toggle_rela(rela)].clone();
-    //     let mut brother = brother_ptr;
-    //     if brother.flag.is_black() {
-    //         let right_nephew_ptr = brother.next[toggle_rela(rela)].clone();
-    //         let mut right_nephew = right_nephew_ptr;
-    //         let left_nephew_ptr = brother.next[rela].clone();
-    //         let mut left_nephew = left_nephew_ptr;
-    //         if right_nephew.flag.is_red() {
-    //             brother.single_rotate();
-    //             brother.flag.set_color(parent.flag.color());
-    //             parent.flag.set_black();
-    //             right_nephew.flag.set_black();
-    //         } else if left_nephew.flag.is_red() {
-    //             left_nephew.single_rotate();
-    //             left_nephew.single_rotate();
-    //             left_nephew.flag.set_color(parent.flag.color());
-    //             parent.flag.set_black();
-    //         } else {
-    //             brother.flag.set_red();
-    //             if parent.flag.is_red() {
-    //                 parent.flag.set_black();
-    //             } else if parent.flag.rela() != PARENT as usize {
-    //                 parent.parent.rasie(parent.flag.rela());
-    //             }
-    //         }
-    //     } else {
-    //         brother.single_rotate();
-    //         parent.flag.set_red();
-    //         brother.flag.set_black();
-    //         parent.rasie(rela);
-    //     }
-    // }
 }

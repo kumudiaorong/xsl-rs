@@ -842,7 +842,7 @@ where
             return replace(repl_node);
         }
         let repl_node = replace(node);
-        let mut parent_ptr = repl_node.parent.clone();
+        let mut parent = repl_node.parent.clone();
         let rela = repl_node.flag.rela();
         let color = repl_node.flag.color();
         self.length -= 1;
@@ -851,129 +851,108 @@ where
                 .deallocate(repl_node.unwrap().cast(), Layout::new::<Node<K, V>>());
         }
         if color == Color::RED {
-            parent_ptr.next[rela] = NodeRef::none();
+            parent.next[rela] = NodeRef::none();
             return kv;
         }
         if rela == ROOT as usize {
             self.root = NodeRef::none();
             return kv;
         }
-        parent_ptr.next[rela] = NodeRef::none();
-        let mut brother_ptr = parent_ptr.next[toggle_rela(rela)]
-            .clone()
-            .into_owned()
-            .unwrap();
-        if brother_ptr.flag.is_red() {
-            if parent_ptr.flag.is_root() {
-                brother_ptr.flag.set_root();
-                self.root = brother_ptr.get_node_ref();
+        parent.next[rela] = NodeRef::none();
+        let mut brother = parent.next[toggle_rela(rela)].clone().into_owned().unwrap();
+        let prela = parent.flag.rela();
+        if brother.flag.is_red() {
+            if parent.flag.is_root() {
+                brother.flag.set_root();
+                self.root = brother.get_node_ref();
             } else {
-                let mut gparent = parent_ptr.parent.clone();
-                let prela = parent_ptr.flag.rela();
-                gparent.next[prela] = brother_ptr.get_node_ref();
-                brother_ptr.set_parent(gparent, prela as u8);
-                brother_ptr.flag.set_black();
+                parent.parent.set_child(brother.clone(), prela as u8);
+                brother.flag.set_black();
             }
-            parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
-            let mut nephew = brother_ptr.next[rela].clone().into_owned().unwrap();
-            let left_gnephew = nephew.next[rela].clone();
-            let right_gnephew = nephew.next[toggle_rela(rela)].clone();
-            match (left_gnephew.into_owned(), right_gnephew.into_owned()) {
+            parent.next[toggle_rela(rela)] = NodeRef::none();
+            let mut nephew = brother.next[rela].clone().into_owned().unwrap();
+            match (
+                nephew.next[rela].clone().into_owned(),
+                nephew.next[toggle_rela(rela)].clone().into_owned(),
+            ) {
                 (None, _) => {
-                    nephew.next[rela] = parent_ptr.get_node_ref();
-                    parent_ptr.set_parent(nephew, rela as u8);
-                    parent_ptr.flag.set_red();
+                    parent.flag.set_red();
+                    nephew.set_child(parent, rela as u8);
                 }
                 (Some(mut lgnephew), Some(mut rgnephew)) => {
                     nephew.flag.set_red();
                     lgnephew.flag.set_black();
                     rgnephew.flag.set_black();
-                    lgnephew.next[rela] = parent_ptr.get_node_ref();
-                    parent_ptr.set_parent(lgnephew, rela as u8);
-                    parent_ptr.flag.set_red();
+                    parent.flag.set_red();
+                    lgnephew.set_child(parent, rela as u8);
                 }
                 (Some(mut lgnephew), None) => {
-                    brother_ptr.next[rela] = lgnephew.get_node_ref();
-                    lgnephew.set_parent(brother_ptr, rela as u8);
-                    lgnephew.next[toggle_rela(rela)] = nephew.get_node_ref();
-                    lgnephew.next[rela] = parent_ptr.get_node_ref();
-                    nephew.set_parent(lgnephew.clone(), toggle_rela(rela) as u8);
-                    parent_ptr.set_parent(lgnephew, rela as u8);
-                    parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
+                    parent.next[toggle_rela(rela)] = NodeRef::none();
                     nephew.next[rela] = NodeRef::none();
+
+                    brother.set_child(lgnephew.clone(), rela as u8);
+                    lgnephew.set_child(nephew, toggle_rela(rela) as u8);
+                    lgnephew.set_child(parent, rela as u8);
                 }
             };
         } else {
-            let left_nephew = brother_ptr.next[rela].clone().into_owned();
-            let right_nephew = brother_ptr.next[toggle_rela(rela)].clone().into_owned();
-            match (left_nephew, right_nephew) {
+            match (
+                brother.next[rela].clone().into_owned(),
+                brother.next[toggle_rela(rela)].clone().into_owned(),
+            ) {
                 (None, None) => {
-                    brother_ptr.flag.set_red();
-                    if !parent_ptr.flag.is_root() {
-                        if parent_ptr.flag.is_black() {
-                            let prela = parent_ptr.flag.rela();
-                            if let Some(new_root) = parent_ptr.parent.rasie(prela) {
+                    brother.flag.set_red();
+                    if !parent.flag.is_root() {
+                        if parent.flag.is_black() {
+                            if let Some(new_root) = parent.parent.rasie(prela) {
                                 self.root = new_root.get_node_ref();
                             }
                         } else {
-                            parent_ptr.flag.set_black();
+                            parent.flag.set_black();
                         }
                     }
                 }
                 (None, Some(mut rnephew)) => {
-                    if parent_ptr.flag.is_root() {
-                        brother_ptr.flag.set_root();
-                        self.root = brother_ptr.get_node_ref();
+                    if parent.flag.is_root() {
+                        brother.flag.set_root();
+                        self.root = brother.get_node_ref();
                     } else {
-                        let mut gparent = parent_ptr.parent.clone();
-                        let prela = parent_ptr.flag.rela();
-                        gparent.next[prela] = brother_ptr.get_node_ref();
-                        brother_ptr.set_parent(gparent, prela as u8);
+                        parent.parent.set_child(brother.clone(), prela as u8);
                     }
-                    brother_ptr.next[rela] = parent_ptr.get_node_ref();
-                    parent_ptr.set_parent(brother_ptr, rela as u8);
-                    parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
-                    rnephew.flag.set_color(parent_ptr.flag.color());
+                    rnephew.flag.set_color(parent.flag.color());
+                    parent.next[toggle_rela(rela)] = NodeRef::none();
+                    brother.set_child(parent, rela as u8);
                 }
                 (Some(mut lnephew), Some(mut rnephew)) => {
-                    if parent_ptr.flag.is_root() {
-                        brother_ptr.flag.set_root();
-                        self.root = brother_ptr.get_node_ref();
+                    if parent.flag.is_root() {
+                        brother.flag.set_root();
+                        self.root = brother.get_node_ref();
                     } else {
-                        let mut gparent = parent_ptr.parent.clone();
-                        let prela = parent_ptr.flag.rela();
-                        gparent.next[prela] = brother_ptr.get_node_ref();
-                        brother_ptr.set_parent(gparent, prela as u8);
+                        parent.parent.set_child(brother.clone(), prela as u8);
                     }
-                    lnephew.next[rela] = parent_ptr.get_node_ref();
-                    parent_ptr.set_parent(lnephew.clone(), rela as u8);
-                    brother_ptr.flag.set_color(parent_ptr.flag.color());
-                    parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
+                    brother.flag.set_color(parent.flag.color());
                     lnephew.flag.set_black();
                     rnephew.flag.set_black();
-                    parent_ptr.flag.set_red();
+                    parent.flag.set_red();
+                    parent.next[toggle_rela(rela)] = NodeRef::none();
+                    lnephew.set_child(parent, rela as u8);
                 }
                 (Some(mut lnephew), None) => {
-                    if parent_ptr.flag.is_root() {
+                    if parent.flag.is_root() {
                         lnephew.flag.set_root();
                         self.root = lnephew.get_node_ref();
                     } else {
-                        let mut gparent = parent_ptr.parent.clone();
-                        let prela = parent_ptr.flag.rela();
-                        gparent.next[prela] = lnephew.get_node_ref();
-                        lnephew.set_parent(gparent, prela as u8);
+                        parent.parent.set_child(lnephew.clone(), prela as u8);
                     }
-                    lnephew.next[toggle_rela(rela)] = brother_ptr.get_node_ref();
-                    brother_ptr.set_parent(lnephew.clone(), toggle_rela(rela) as u8);
-                    lnephew.next[rela] = parent_ptr.get_node_ref();
-                    parent_ptr.set_parent(lnephew.clone(), rela as u8);
-                    parent_ptr.next[toggle_rela(rela)] = NodeRef::none();
-                    brother_ptr.next[rela] = NodeRef::none();
-                    if parent_ptr.flag.is_black() {
+                    if parent.flag.is_black() {
                         lnephew.flag.set_black();
                     } else {
-                        parent_ptr.flag.set_black();
+                        parent.flag.set_black();
                     }
+                    parent.next[toggle_rela(rela)] = NodeRef::none();
+                    brother.next[rela] = NodeRef::none();
+                    lnephew.set_child(brother, toggle_rela(rela) as u8);
+                    lnephew.set_child(parent, rela as u8);
                 }
             }
         }
