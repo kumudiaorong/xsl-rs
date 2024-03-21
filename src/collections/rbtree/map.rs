@@ -198,7 +198,7 @@ where
                 }
                 #[cfg(not(debug_assertions))]
                 {
-                    OwnedNodeRef::new_in(alloc.clone())
+                    OwnedNodeRef::new_in(alloc)
                 }
             };
             new_node.init_from(&*src_child);

@@ -4,6 +4,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
+const MISS_COUNT: usize = 3;
+const IGNORE_CASE: bool = true;
 #[derive(Debug)]
 pub struct Finder<T> {
     root: Node<T>,
@@ -12,7 +14,14 @@ pub struct Finder<T> {
 }
 impl<T> Default for Finder<T> {
     fn default() -> Self {
-        Self::new(3, true)
+        Self {
+            root: Node {
+                children: BTreeMap::new(),
+                values: Vec::new(),
+            },
+            miss_count: MISS_COUNT,
+            ignore_case: IGNORE_CASE,
+        }
     }
 }
 impl<T> Extend<(String, T)> for Finder<T> {
@@ -28,7 +37,12 @@ struct Node<T> {
     values: Vec<T>,
 }
 impl<T> Finder<T> {
-    pub fn new(miss_count: usize, ignore_case: bool) -> Self {
+    /// Create a new FuzzyFinder with default parameters.
+    pub fn new() -> Self {
+        Default::default()
+    }
+    /// Create a new FuzzyFinder with the given parameters.
+    pub fn with_params(miss_count: usize, ignore_case: bool) -> Self {
         Self {
             root: Node {
                 children: BTreeMap::new(),
@@ -59,10 +73,10 @@ impl<T> Finder<T> {
     /// use xsl::collections::FuzzyFinder;
     /// let mut finder = FuzzyFinder::default();
     /// finder.insert("hello".to_string(), 1);
-    /// assert_eq!(finder.search("hello".to_string()), Some(vec![&1]));
-    /// assert_eq!(finder.search("world".to_string()), None);
+    /// assert_eq!(finder.search("hello".to_string()), vec![&1]);
+    /// assert_eq!(finder.search("world".to_string()), Vec::<&i32>::new());
     /// ```
-    pub fn search(&self, mut word: String) -> Option<Vec<&T>> {
+    pub fn search(&self, mut word: String) -> Vec<&T> {
         if self.ignore_case {
             word = word.to_lowercase();
         }
@@ -71,10 +85,10 @@ impl<T> Finder<T> {
             if let Some(n) = node.children.get(&c) {
                 node = n;
             } else {
-                return None;
+                return Vec::new();
             }
         }
-        (!node.values.is_empty()).then(|| node.values.iter().collect())
+        node.values.iter().collect()
     }
     /// Search a word prefix in the FuzzyFinder.
     /// Return the values if the word prefix is found, otherwise return None.
@@ -84,11 +98,11 @@ impl<T> Finder<T> {
     /// let mut finder = FuzzyFinder::default();
     /// finder.insert("hello".to_string(), 1);
     /// finder.insert("ello".to_string(), 2);
-    /// assert_eq!(finder.search_prefix("he".to_string()), Some(vec![&1]));
-    /// assert_eq!(finder.search_prefix("e".to_string()), Some(vec![&2, &1]));
-    /// assert_eq!(finder.search_prefix("w".to_string()), None);
+    /// assert_eq!(finder.search_prefix("he".to_string()), vec![&1]);
+    /// assert_eq!(finder.search_prefix("e".to_string()), vec![&2, &1]);
+    /// assert_eq!(finder.search_prefix("w".to_string()), Vec::<&i32>::new());
     /// ```
-    pub fn search_prefix(&self, mut word: String) -> Option<Vec<&T>> {
+    pub fn search_prefix(&self, mut word: String) -> Vec<&T> {
         if self.ignore_case {
             word = word.to_lowercase();
         }
@@ -126,15 +140,10 @@ impl<T> Finder<T> {
                 valid_nodes.push(node);
             }
         }
-        if over.is_empty() {
-            return None;
-        }
-        Some(
-            over.iter()
-                .rev()
-                .map(|n| n.values.iter())
-                .flatten()
-                .collect(),
-        )
+        over.iter()
+            .rev()
+            .map(|n| n.values.iter())
+            .flatten()
+            .collect()
     }
 }
